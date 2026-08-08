@@ -1,0 +1,3834 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Герой Пустыни — арена (v0.3)</title>
+  <!-- Three.js подключается из интернета (первый запуск требует сети) -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    /* ============================================================
+       ГЕРОЙ ПУСТЫНИ — стили интерфейса (HUD, меню, сообщения)
+       ============================================================ */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000;
+      font-family: "Segoe UI", "Arial", system-ui, sans-serif; color: #fff; user-select: none; }
+
+    #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+    #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 5;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(20, 8, 0, 0.55) 100%); }
+
+    /* ---------- HUD ---------- */
+    #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+    #hud.hidden { display: none; }
+
+    #crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      font-size: 30px; line-height: 1; color: rgba(255,255,255,0.9);
+      text-shadow: 0 0 6px rgba(0,0,0,0.8); transition: transform 0.08s ease-out, color 0.1s; font-weight: 300; }
+    #crosshair.fire { transform: translate(-50%, -50%) scale(1.7); }
+    #crosshair.hit  { color: #ff5a3c; transform: translate(-50%, -50%) scale(1.9); }
+
+    #hurt-flash { position: absolute; inset: 0; opacity: 0;
+      background: radial-gradient(ellipse at center, rgba(200,0,0,0.55) 0%, rgba(150,0,0,0.15) 60%, transparent 100%); }
+
+    #top-left { position: absolute; top: 18px; left: 18px; padding: 12px 18px;
+      background: rgba(10,8,4,0.55); border: 1px solid rgba(255,210,122,0.25); border-radius: 10px;
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      font-size: 15px; line-height: 1.55; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+    #wave-text  { color: #ffd27a; font-weight: 700; font-size: 17px; }
+    #score-text, #kills-text { color: #e8e2d4; }
+
+    #bottom { position: absolute; left: 0; right: 0; bottom: 22px;
+      display: flex; align-items: flex-end; justify-content: space-between; padding: 0 26px; gap: 20px; }
+
+    #hp-wrap { position: relative; width: min(340px, 38vw); height: 26px;
+      background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.25); border-radius: 13px;
+      overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+    #hp-fill { height: 100%; width: 100%; transition: width 0.15s ease-out;
+      background: linear-gradient(180deg,#66d96b,#2f9e3a); }
+    #hp-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 15px; text-shadow: 0 1px 2px rgba(0,0,0,0.9); }
+
+    #ammo-wrap { text-align: right; padding: 8px 16px; background: rgba(10,8,4,0.55);
+      border: 1px solid rgba(255,210,122,0.25); border-radius: 10px;
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    #gun-name { font-size: 13px; color: #ffd27a; letter-spacing: 1px; text-transform: uppercase; }
+    #ammo-text { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
+
+    #gun-hint { position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%);
+      padding: 8px 16px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,210,122,0.4);
+      border-radius: 20px; color: #ffd27a; font-size: 13px; animation: pulse 1.8s ease-in-out infinite; }
+    #gun-hint.hidden { display: none; }
+    @keyframes pulse { 0%,100% { opacity: 0.75; } 50% { opacity: 1; } }
+
+    /* ---------- Стрелки на врагов ---------- */
+    #enemy-arrows { position: absolute; inset: 0; pointer-events: none; z-index: 8; }
+    .e-arrow { position: absolute; width: 0; height: 0; pointer-events: none;
+      border-left: 7px solid transparent; border-right: 7px solid transparent;
+      border-top: 13px solid #ffd27a; filter: drop-shadow(0 0 4px rgba(0,0,0,0.9));
+      transition: opacity 0.2s ease; }
+
+    /* ---------- Слоты оружия ---------- */
+    .right-side { display: flex; align-items: flex-end; gap: 14px; }
+    #weapon-slots { display: flex; gap: 6px; padding: 9px 10px;
+      background: rgba(10,8,4,0.55); border: 1px solid rgba(255,210,122,0.25); border-radius: 10px;
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    .wslot { width: 54px; padding: 5px 0 4px; text-align: center; border-radius: 8px;
+      border: 1px solid rgba(255,210,122,0.16); color: #8a8270; font-size: 11px; line-height: 1.25;
+      transition: all 0.15s ease; cursor: default; }
+    .wslot b { display: block; font-size: 17px; color: #6b6350; }
+    .wslot span { display: block; font-size: 9px; letter-spacing: 1px; }
+    .wslot.on { background: linear-gradient(180deg, rgba(255,210,122,0.35), rgba(217,164,65,0.18));
+      border-color: #ffd27a; color: #ffe9c0; box-shadow: 0 0 14px rgba(255,210,122,0.35); }
+    .wslot.on b { color: #ffd27a; }
+    .wslot.hot { border-color: #ff5a3c; color: #ff8a70; box-shadow: 0 0 12px rgba(255,90,60,0.4); }
+
+    /* ---------- Титул «Моноколесная Легенда» ---------- */
+    #wheel-title { margin-top: 6px; font-size: 13px; font-weight: 800; letter-spacing: 2px;
+      color: #ffd27a; text-shadow: 0 0 10px rgba(255,200,90,0.6), 0 2px 4px rgba(0,0,0,0.9);
+      animation: titlePulse 2.4s ease-in-out infinite; }
+    #wheel-title.hidden { display: none; }
+    @keyframes titlePulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.55; }
+    }
+
+    /* ---------- Сообщения ---------- */
+    #center-msg { position: fixed; left: 50%; top: 32%; transform: translate(-50%,-50%) scale(0.85);
+      font-size: clamp(28px, 6vw, 56px); font-weight: 800; letter-spacing: 6px; color: #ffd27a;
+      text-align: center; text-shadow: 0 0 24px rgba(255,180,60,0.5), 0 3px 6px rgba(0,0,0,0.8);
+      opacity: 0; pointer-events: none; z-index: 20; transition: opacity 0.25s ease, transform 0.25s ease; }
+    #center-msg.on { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+
+    #pickup-msg { position: fixed; left: 50%; bottom: 26%; transform: translateX(-50%);
+      font-size: 20px; font-weight: 700; color: #7dff8a;
+      text-shadow: 0 0 12px rgba(60,255,90,0.6), 0 2px 4px rgba(0,0,0,0.8);
+      opacity: 0; pointer-events: none; z-index: 20; transition: opacity 0.3s ease; }
+    #pickup-msg.on { opacity: 1; }
+
+    /* ---------- Экраны (меню / пауза / смерть) ---------- */
+    #overlay { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; text-align: center;
+      background: radial-gradient(ellipse at center, rgba(30,15,4,0.55) 0%, rgba(0,0,0,0.93) 100%); }
+    #overlay.hidden { display: none; }
+    /* В главном меню фон светлее — за интерфейсом виден синематик-бой */
+    #overlay.cinema { background: radial-gradient(ellipse at center, rgba(30,15,4,0.2) 0%, rgba(0,0,0,0.66) 100%); }
+
+    #overlay-title { font-size: clamp(40px, 9vw, 84px); font-weight: 900; letter-spacing: 12px;
+      color: #ffd27a; text-shadow: 0 0 40px rgba(255,190,70,0.55), 0 4px 12px rgba(0,0,0,0.9);
+      margin-bottom: 14px; }
+    /* подколы на экране смерти — длинные шутки, шрифт поменьше */
+    #overlay-title.taunt { font-size: clamp(20px, 4vw, 38px); letter-spacing: 2px; line-height: 1.35; max-width: 780px; }
+    #overlay-sub { font-size: 17px; color: #e0d6c2; line-height: 1.6; max-width: 620px;
+      white-space: pre-line; /* многострочные тексты сюжета (пролог, титры) */
+      text-shadow: 0 2px 4px rgba(0,0,0,0.8); margin-bottom: 34px; }
+
+    #overlay-btn { padding: 16px 52px; font-size: 20px; font-weight: 800; letter-spacing: 3px;
+      color: #2b1c00; background: linear-gradient(180deg,#ffd27a,#d9a441 60%,#b97f1f);
+      border: none; border-radius: 10px; cursor: pointer;
+      box-shadow: 0 6px 22px rgba(217,164,65,0.45), inset 0 1px 0 rgba(255,255,255,0.5);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease; margin-bottom: 34px; }
+    #overlay-btn:hover { transform: translateY(-2px) scale(1.05); filter: brightness(1.08);
+      box-shadow: 0 10px 30px rgba(217,164,65,0.6), inset 0 1px 0 rgba(255,255,255,0.5); }
+    #overlay-btn:active { transform: scale(0.97); }
+
+    #overlay-help { font-size: 13px; color: #9a917f; line-height: 1.8; max-width: 640px; }
+
+    /* ---------- Монеты ---------- */
+    #coins-text { color: #ffd27a; font-weight: 700; font-size: 15px; margin-top: 4px; }
+
+    /* ---------- Полоса босса ---------- */
+    #boss-wrap { position: absolute; left: 50%; top: 16px; transform: translateX(-50%);
+      width: min(460px, 50vw); text-align: center; }
+    #boss-wrap.hidden { display: none; }
+    #boss-name { font-size: 14px; font-weight: 800; letter-spacing: 3px; color: #ff5a3c;
+      text-shadow: 0 0 12px rgba(255,60,40,0.7), 0 2px 4px rgba(0,0,0,0.9); margin-bottom: 6px; }
+    #boss-bar { height: 14px; border-radius: 7px; overflow: hidden;
+      background: rgba(0,0,0,0.6); border: 1px solid rgba(255,90,60,0.6);
+      box-shadow: 0 0 18px rgba(255,60,40,0.35); }
+    #boss-fill { height: 100%; width: 100%; transition: width 0.2s ease;
+      background: linear-gradient(180deg,#ff6b5b,#c62828); }
+
+    /* ---------- Прогресс «Прорыва» (коридор с ордами) ---------- */
+    #corr-wrap { position: absolute; left: 50%; top: 16px; transform: translateX(-50%);
+      width: min(420px, 50vw); text-align: center; }
+    #corr-wrap.hidden { display: none; }
+    #corr-text { font-size: 13px; font-weight: 800; letter-spacing: 2px; color: #ffb347;
+      text-shadow: 0 0 12px rgba(255,140,40,0.7), 0 2px 4px rgba(0,0,0,0.9); margin-bottom: 6px; }
+    #corr-bar { height: 12px; border-radius: 6px; overflow: hidden;
+      background: rgba(0,0,0,0.6); border: 1px solid rgba(255,180,70,0.6);
+      box-shadow: 0 0 14px rgba(255,140,40,0.3); }
+    #corr-fill { height: 100%; width: 0%; transition: width 0.2s ease;
+      background: linear-gradient(90deg,#ff6a00,#ffd27a); }
+
+    /* ---------- Комбо ---------- */
+    #combo-text { position: absolute; left: 50%; top: 17%; transform: translateX(-50%);
+      font-size: clamp(26px, 5vw, 44px); font-weight: 900; letter-spacing: 3px;
+      color: #ffb347; text-shadow: 0 0 22px rgba(255,140,40,0.7), 0 3px 6px rgba(0,0,0,0.85);
+      pointer-events: none; animation: comboPop 0.25s ease-out; }
+    #combo-text.hidden { display: none; }
+    @keyframes comboPop { 0% { transform: translateX(-50%) scale(1.6); } 100% { transform: translateX(-50%) scale(1); } }
+
+    /* ---------- Магазин ---------- */
+    #shop { margin-top: 4px; margin-bottom: 26px; width: min(680px, 92vw); }
+    #shop.hidden { display: none; }
+    #shop-title { font-size: 17px; font-weight: 800; letter-spacing: 2px; color: #ffd27a;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.8); margin-bottom: 12px; }
+    #shop-items { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+    .shop-item { width: 196px; padding: 12px 10px; border-radius: 10px; text-align: center;
+      background: rgba(20,14,6,0.75); border: 1px solid rgba(255,210,122,0.3);
+      backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+      display: flex; flex-direction: column; gap: 4px; align-items: center; }
+    .shop-item .si-name { font-size: 15px; font-weight: 800; color: #ffe9c0; }
+    .shop-item .si-desc { font-size: 12px; color: #b8ab94; }
+    .shop-item .si-level { font-size: 12px; color: #ffd27a; letter-spacing: 1px; }
+    .shop-btn { margin-top: 6px; padding: 8px 20px; font-size: 14px; font-weight: 800;
+      color: #2b1c00; background: linear-gradient(180deg,#ffd27a,#d9a441 60%,#b97f1f);
+      border: none; border-radius: 8px; cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.5); transition: transform 0.12s ease, filter 0.12s ease; }
+    .shop-btn:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.1); }
+    .shop-btn:disabled { background: #4a4233; color: #8a8270; cursor: not-allowed;
+      box-shadow: none; filter: grayscale(0.5); }
+    .shop-max { font-size: 12px; color: #7dff8a; font-weight: 700; margin-top: 6px; }
+
+    /* ---------- Выбор уровня (кампания) ---------- */
+    #level-select { margin-bottom: 22px; width: min(780px, 94vw); }
+    #level-select.hidden { display: none; }
+    #level-title { font-size: 16px; font-weight: 800; letter-spacing: 2px; color: #ffd27a;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.8); margin-bottom: 12px; }
+    #level-items { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+    .level-btn { width: 176px; padding: 12px 8px; border-radius: 10px; cursor: pointer;
+      background: rgba(20,14,6,0.75); border: 1px solid rgba(255,210,122,0.3);
+      backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+      color: #ffe9c0; font-size: 14px; font-weight: 800; line-height: 1.35;
+      transition: transform 0.12s ease, filter 0.12s ease, box-shadow 0.12s ease; }
+    .level-btn:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.15);
+      box-shadow: 0 6px 18px rgba(217,164,65,0.3); }
+    .level-btn.sel { border-color: #ffd27a; box-shadow: 0 0 16px rgba(255,210,122,0.4); }
+    .level-btn.locked { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.7); }
+    .level-btn small { display: block; font-size: 11px; font-weight: 500; color: #b8ab94; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <!-- 3D-сцена -->
+  <canvas id="game"></canvas>
+
+  <!-- Виньетка для настроения -->
+  <div id="vignette"></div>
+
+  <!-- Интерфейс (HUD) -->
+  <div id="hud" class="hidden">
+    <div id="crosshair" title="Прицел">+</div>
+    <div id="hurt-flash"></div>
+
+    <div id="top-left">
+      <div id="wave-text">Волна 0</div>
+      <div id="score-text">Счёт: 0</div>
+      <div id="kills-text">Убийств: 0</div>
+      <div id="enemies-text">👹 Врагов: 0</div>
+      <div id="coins-text">🪙 0</div>
+      <!-- Титул «Моноколесная Легенда» (после покупки колеса за 9999 🪙) -->
+      <div id="wheel-title" class="hidden">🛞 МОН0КОЛЕСНАЯ ЛЕГЕНДА</div>
+      <div id="music-ind" title="M — музыка вкл/выкл" style="margin-top:4px; font-size:15px;">🎵</div>
+    </div>
+
+    <!-- Стрелки-указатели на врагов за краем экрана -->
+    <div id="enemy-arrows"></div>
+
+    <!-- Полоса здоровья босса (появляется при боссе) -->
+    <div id="boss-wrap" class="hidden">
+      <div id="boss-name">ВЛАДЫКА ПУСТЫНИ</div>
+      <div id="boss-bar"><div id="boss-fill"></div></div>
+    </div>
+
+    <!-- Прогресс «Прорыва» (появляется в коридоре с ордами) -->
+    <div id="corr-wrap" class="hidden">
+      <div id="corr-text">🔥 ПРОРЫВ</div>
+      <div id="corr-bar"><div id="corr-fill"></div></div>
+    </div>
+
+    <!-- Комбо-множитель -->
+    <div id="combo-text" class="hidden"></div>
+
+    <div id="bottom">
+      <div id="hp-wrap">
+        <div id="hp-fill"></div>
+        <span id="hp-text">100</span>
+      </div>
+      <div class="right-side">
+        <div id="weapon-slots">
+          <div class="wslot" data-w="0"><b>1</b><span>ВИНТОВКА</span></div>
+          <div class="wslot" data-w="1"><b>2</b><span>ДРОБОВИК</span></div>
+          <div class="wslot" data-w="2"><b>3</b><span>МИНИГАН</span></div>
+          <div class="wslot" data-w="3"><b>4</b><span>РАКЕТНИЦА</span></div>
+          <div class="wslot wslot5 hidden" data-w="4"><b>5</b><span>КОЛЕСО</span></div>
+        </div>
+        <div id="ammo-wrap">
+          <div id="gun-name">Винтовка</div>
+          <div id="ammo-text">30 / ∞</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="gun-hint" class="hidden">🔍 Режим совместимости: зажми ПКМ и веди мышью, чтобы осматриваться</div>
+  </div>
+
+  <!-- Музыка и голоса (аудио-элементы играют без CORS, их можно брать с любых сайтов) -->
+  <!-- Меню: Big Rock (3:50, Kevin MacLeod, CC-BY 3.0, incompetech) — тяжёлый рок -->
+  <audio id="mus-menu" loop preload="none"
+    src="https://incompetech.com/music/royalty-free/mp3-royaltyfree/Big%20Rock.mp3"></audio>
+  <!-- Бой: Five Armies (3:10, Kevin MacLeod, CC-BY 3.0, incompetech) — эпичный боевой рок -->
+  <audio id="mus-battle" loop preload="none"
+    src="https://incompetech.com/music/royalty-free/mp3-royaltyfree/Five%20Armies.mp3"></audio>
+  <!-- Босс: Industrial Cinematic (2:00, Kevin MacLeod, CC-BY 3.0, incompetech) — агрессивный индастриал -->
+  <audio id="mus-boss" loop preload="none"
+    src="https://incompetech.com/music/royalty-free/mp3-royaltyfree/Industrial%20Cinematic.mp3"></audio>
+  <!-- Рёв босса: CC0 Deep Monster Roar (openGameArt) -->
+  <audio id="mus-roar" preload="none"
+    src="https://opengameart.org/sites/default/files/monster_roar.wav"></audio>
+
+  <!-- Большие сообщения по центру (ВОЛНА 3, ХЕДШОТ! ...) -->
+  <div id="center-msg"></div>
+  <!-- Сообщения о подборе (аптечка) -->
+  <div id="pickup-msg"></div>
+
+  <!-- Экраны: меню / пауза / смерть -->
+  <div id="overlay">
+    <h1 id="overlay-title">ГЕРОЙ ПУСТЫНИ</h1>
+    <p id="overlay-sub">
+      Кампания в духе Serious Sam — пройди 4 локации и одолей Владыку Тьмы!
+    </p>
+
+    <!-- Выбор уровня (виден в меню) -->
+    <div id="level-select" class="hidden">
+      <div id="level-title">🗺 ВЫБОР УРОВНЯ</div>
+      <div id="level-items"></div>
+    </div>
+
+    <button id="overlay-btn">▶ НАЧАТЬ УРОВЕНЬ</button>
+
+    <!-- Магазин улучшений (монеты копятся между забегами) -->
+    <div id="shop" class="hidden">
+      <div id="shop-title">🪙 МАГАЗИН УЛУЧШЕНИЙ — <span id="shop-coins">0</span></div>
+      <div id="shop-items"></div>
+    </div>
+
+    <p id="overlay-help">
+      WASD — движение &nbsp;·&nbsp; Мышь — обзор &nbsp;·&nbsp; ЛКМ — огонь<br />
+      1 / 2 / 3 / 4 — оружие (винтовка, дробовик, миниган, ракетница) &nbsp;·&nbsp; R — перезарядка<br />
+      Shift — бег &nbsp;·&nbsp; Пробел — прыжок &nbsp;·&nbsp; M — музыка &nbsp;·&nbsp; [ ] — чувствительность мыши<br />
+      <span style="font-size:11px; color:#7a7160;">Музыка: Big Rock, Five Armies, Industrial Cinematic (Kevin MacLeod — incompetech.com) — CC-BY 3.0</span>
+    </p>
+  </div>
+
+  <script type="module">
+    // ============================================================
+    //  ГЕРОЙ ПУСТЫНИ — арена (прототип v0.3)
+    //  Игра в духе Serious Sam: волны врагов, оружие, счёт.
+    //  Код написан с комментариями на русском, чтобы было понятно
+    //  даже человеку без опыта в программировании.
+    // ============================================================
+
+    import * as THREE from 'three';
+
+    // ------------------------------------------------------------
+    // НАСТРОЙКИ ИГРЫ (здесь можно менять цифры — игра изменится!)
+    // ------------------------------------------------------------
+    const CONFIG = {
+      eyeHeight: 1.7,     // высота глаз игрока (в метрах)
+      walkSpeed: 6,       // скорость ходьбы
+      sprintSpeed: 9.5,   // скорость бега (Shift)
+      jumpSpeed: 8.2,     // сила прыжка
+      gravity: 24,        // гравитация
+      maxHp: 100,         // максимум здоровья
+      arenaRadius: 58,    // радиус арены (за него нельзя выйти)
+      wavePause: 4,       // пауза между волнами (секунды)
+    };
+
+    // ------------------------------------------------------------
+    // ТИПЫ ВРАГОВ
+    // ------------------------------------------------------------
+    const ENEMY_TYPES = {
+      walker:   { name: 'Кабан',        hp: 40,  speed: 3.0, damage: 12, radius: 0.55, color: 0x7a8b4e, score: 10, coins: 1 },
+      charger:  { name: 'Бык',          hp: 70,  speed: 5.8, damage: 20, radius: 0.70, color: 0xb04a2a, score: 15, coins: 2 },
+      flyer:    { name: 'Летун',        hp: 25,  speed: 4.2, damage: 8,  radius: 0.50, color: 0x5b7aa8, score: 12, coins: 2, fly: true },
+      kamikaze: { name: 'Камикадзе',    hp: 15,  speed: 7.6, damage: 35, radius: 0.45, color: 0xff5a2a, score: 20, coins: 3, explode: true },
+      spitter:  { name: 'Плевун',       hp: 30,  speed: 2.2, damage: 10, radius: 0.50, color: 0x7a4a8a, score: 15, coins: 3, ranged: true },
+      monowheel:{ name: 'Моноколесник', hp: 28,  speed: 6.8, damage: 18, radius: 0.55, color: 0x9a2a5a, score: 18, coins: 3 },
+      boss:     { name: 'ВЛАДЫКА ПУСТЫНИ', hp: 420, speed: 2.3, damage: 30, radius: 1.20, color: 0x3d3a52, score: 100, coins: 50, boss: true },
+    };
+
+    // ------------------------------------------------------------
+    // КАМПАНИЯ: УРОВНИ
+    // Каждый уровень — свои волны, своя палитра неба/песка/света,
+    // свой босс в финале и награда за прохождение.
+    // ------------------------------------------------------------
+    // Настоящие CC0-текстуры из Poly Haven (1K JPG, лицензия CC0 — можно свободно!)
+    const PH = (id) => 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/' + id + '/' + id + '_diff_1k.jpg';
+    const LEVELS = [
+      {
+        name: 'ПЕСЧАНАЯ АРЕНА', waves: 4, reward: 40, bossName: 'ВЛАДЫКА ПУСТЫНИ',
+        desc: 'Жаркий песок, первые орды и древние пирамиды',
+        sky: ['#2a5fa8', '#6fb1e0', '#c9a05e', '#d9b069'], horizon: 0xd9b069,
+        sand: 0xd9b36b, sun: 0xfff0d0, sunInt: 1.35, hemi: [0xbfd9ff, 0x8a6a3a], sunPos: [-120, 90, -220],
+        skybox: true, // настоящее небо-куб (дневной уровень)
+        tex: { ground: 'coast_sand_01', rock: 'large_sandstone_blocks', wall: 'large_sandstone_blocks' },
+        tint: 0xc8a468, // тонировка скал и стен (чтобы карты отличались даже без текстур)
+      },
+      {
+        name: 'ХРАМ НОЧИ', waves: 5, reward: 60, bossName: 'СТРАЖ ХРАМА',
+        desc: 'Луна и древние камни — тени прячут чудовищ',
+        sky: ['#0b1330', '#20305e', '#4a3a7a', '#6a4a8a'], horizon: 0x4a3a7a,
+        sand: 0x7a6a8a, sun: 0x9a8aff, sunInt: 0.95, hemi: [0x6a6aff, 0x3a2a5a], sunPos: [-140, 110, -240],
+        tex: { ground: 'gravelly_sand', rock: 'cobblestone_02', wall: 'cobblestone_02' },
+        tint: 0x6a5a9a,
+      },
+      {
+        name: 'КАНЬОН ЗАКАТА', waves: 6, reward: 90, bossName: 'БЫК-ДЕМОН',
+        desc: 'Пылающий горизонт, ветер воет в скалах',
+        sky: ['#4a1410', '#8a2a18', '#d96a3a', '#e89a5a'], horizon: 0xc96a3a,
+        sand: 0xb06a3a, sun: 0xffb070, sunInt: 1.1, hemi: [0xff9a6a, 0x7a3a2a], sunPos: [160, 40, 260],
+        tex: { ground: 'dry_ground_01', rock: 'dry_ground_rocks', wall: 'large_sandstone_blocks' },
+        tint: 0xc0703a,
+      },
+      {
+        name: 'ТРОН ВЛАДЫКИ', waves: 7, reward: 150, bossName: 'ВЛАДЫКА ТЬМЫ',
+        desc: 'Финал. Тьма сгустилась — сам Владыка ждёт тебя',
+        sky: ['#0a0508', '#1a0a10', '#3a1218', '#5a1a12'], horizon: 0x2a0a0a,
+        sand: 0x4a3a3a, sun: 0xff3a2a, sunInt: 0.7, hemi: [0x6a1a1a, 0x1a0a0a], sunPos: [0, 80, -300],
+        tex: { ground: 'burned_ground_01', rock: 'dark_rock', wall: 'dark_rock' },
+        tint: 0x5a2a26,
+      },
+      {
+        name: 'ПРОРЫВ ЧЕРЕЗ КАНЬОН', waves: 5, reward: 250, bossName: 'ХРАНИТЕЛЬ ВРАТ',
+        desc: '350 метров каньона, орды со всех сторон — дойди до конца!',
+        sky: ['#180a12', '#38101a', '#7a2416', '#b04a1e'], horizon: 0x5a1a10,
+        sand: 0x8a5a3a, sun: 0xff7a3a, sunInt: 1.05, hemi: [0xff8a5a, 0x3a1a0a], sunPos: [140, 60, -320],
+        tex: { ground: 'dry_ground_01', rock: 'dry_ground_rocks', wall: 'dry_ground_rocks' },
+        tint: 0x8a4a2e,
+        corridor: true, corrStartZ: 170, corrFinishZ: -180, corrW: 17, // ПРОРЫВ: коридор по оси Z
+        fogNear: 25, fogFar: 110, // густой туман — конец коридора не видно!
+      },
+    ];
+    let levelIndex = 0;                    // выбранный уровень (0..4)
+    let unlockedLevel = loadVal('gd_level', 0); // последний открытый уровень
+
+    // ------------------------------------------------------------
+    // СЮЖЕТ «Герой Пустыни: В погоне за термосом» (абсурдный юмор!)
+    // ------------------------------------------------------------
+    const STORY = {
+      // пролог — экран при старте кампании
+      prologue: 'Твой верблюд ГОРБ стащил термос с чаем и утащил его в древние руины.\n' +
+        'Теперь ты идёшь за ним через всю пустыню.\n' +
+        'Монстры нападают сами — они просто злятся на всех. Не принимай на свой счёт.',
+      // шутка-представление каждого босса (по номеру уровня)
+      bossIntro: [
+        'Хозяин оазиса, у которого ты занял лучшую тень.',
+        'Сторожевой. Ты наследил на его свежевымытом полу.',
+        'Бывший почтальон. Твою посылку он так и не доставил — зато доставит тебя.',
+        'Садовник, у которого ты вытоптал газон. Он ждал этого разговора.',
+        'Дорожный контролёр. Без пропуска дальше не пустит.',
+      ],
+      // строчка-прикол на экране победы уровня
+      winLine: [
+        'Ты идёшь по следам верблюда. Где-то там — термос.',
+        'Горб устроил ночлег в храме. Вот его следы. И запах.',
+        'Запах чая всё сильнее. Или это миражи?',
+        'Горб сидит на троне и допивает твой чай.',
+        'Термос у тебя. Чай ещё тёплый.',
+      ],
+      // финал кампании — развязка после Хранителя Врат
+      finale: 'Термос у тебя. Чай ещё тёплый.\nГорб подмигивает и уходит в закат.\n' +
+        'На следующее утро он утащил твою шапку.\n— КОНЕЦ?\n(Нет. Шапку надо вернуть.)',
+      // титры
+      credits: '— В РОЛЯХ —\nГорб (верблюд) — сам себя\nМонстры — озлобленные соседи\n' +
+        'Владыка Тьмы — уволен за вытоптанный газон\nМоноколесники — отсутствуют (сдулись)',
+    };
+
+    // ПАСХАЛКА №2: подколы на экране смерти (иногда вместо «ВЫ ПОГИБЛИ»)
+    const DEATH_TAUNTS = [
+      'Моноколесо тоже так падает. Разница: тебе больнее.',
+      'Может, слезешь с колеса и пойдёшь пешком? Ой, ты и так пешком.',
+      'Горб видел это падение. Он смеётся до сих пор.',
+      'Враги уже не злятся. Им тебя жалко.',
+      'Совет: не умирай. Это бесполезно.',
+      'Колесо сдулось. Как и твоя попытка.',
+      'Термос всё ещё где-то там. И теперь без тебя.',
+    ];
+
+    // ---------- УЛУЧШЕНИЯ (навсегда, сохраняются в браузере) ----------
+    function loadVal(key, def) {
+      try { const v = localStorage.getItem(key); return v === null ? def : JSON.parse(v); } catch { return def; }
+    }
+    function saveVal(key, val) {
+      try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+    }
+    const UPGRADES = [
+      { key: 'dmg', name: 'Сила',        desc: '+15% к урону',   base: 30, step: 1.6, max: 5 },
+      { key: 'hp',  name: 'Живучесть',   desc: '+20 здоровья',   base: 25, step: 1.5, max: 5 },
+      { key: 'spd', name: 'Быстрота',    desc: '+8% к скорости', base: 25, step: 1.5, max: 3 },
+    ];
+    // сливаем с дефолтами, чтобы старое сохранение без какого-то ключа не сломало игру
+    const upgrades = Object.assign({ dmg: 0, hp: 0, spd: 0 }, loadVal('gd_upgrades', {}));
+    let coins = loadVal('gd_coins', 0); // монеты копятся между забегами!
+    // ПАСХАЛКА: «Моноколесо» в магазине (9999 🪙) — даёт езду G, метательное колесо и титул
+    let wheelOwned = loadVal('gd_wheel', 0); // 1 = куплено
+    let riding = false;  // едем на моноколесе (клавиша G)
+    let rideBeepT = 0;   // таймер «бииип» во время езды
+    let wheelCelebrate = 0; // показать «КУПИЛ КОЛЕСО» при старте игры (после покупки)
+    const maxHp = () => CONFIG.maxHp + upgrades.hp * 20;
+    const dmgMult = () => 1 + upgrades.dmg * 0.15;
+    const speedMult = () => 1 + upgrades.spd * 0.08;
+    function upgradeCost(u) { return Math.round(u.base * Math.pow(u.step, upgrades[u.key])); }
+
+    // ------------------------------------------------------------
+    // ОРУЖИЕ
+    // ------------------------------------------------------------
+    const WEAPONS = [
+      { id: 0, name: 'Винтовка', dmg: 9,  fireRate: 0.09, spread: 0.012, pellets: 1, mag: 30, magSize: 30, reloadTime: 1.5, auto: true,  recoil: 0.02, color: 0x3a3f47 },
+      { id: 1, name: 'Дробовик', dmg: 9,  fireRate: 0.75, spread: 0.055, pellets: 8, mag: 8,  magSize: 8,  reloadTime: 2.0, auto: false, recoil: 0.06, color: 0x6b4a2b },
+      { id: 2, name: 'Миниган',  dmg: 7,  fireRate: 0.05, spread: 0.03,  pellets: 1, mag: 200, magSize: 200, reloadTime: 2.5, auto: true, recoil: 0.012, color: 0x2e3238, heat: true },
+      { id: 3, name: 'Ракетница', dmg: 55, fireRate: 0.85, spread: 0.0,   pellets: 1, mag: 4,   magSize: 4,   reloadTime: 2.8, auto: false, recoil: 0.09, color: 0x4a5a3a, rocket: true },
+      // СЛОТ 5 (после покупки «Моноколесо» в магазине): метательное колесо — рубит толпу,
+      // отскакивает от стен и ВОЗВРАЩАЕТСЯ к игроку (mag 1 — пока летит, бросить нельзя)
+      { id: 4, name: 'Метательное колесо', dmg: 25, fireRate: 0.2, spread: 0.0, pellets: 1, mag: 1, magSize: 1, reloadTime: 0.01, auto: false, recoil: 0.02, color: 0xd9a441, wheel: true },
+    ];
+    // миниган: перегрев 0..100, остывает со временем; при 100 — стрелять нельзя
+    WEAPONS[2].heat = 0;
+    // снаряды ракетницы летят по миру
+    let rockets = [];
+
+    // ------------------------------------------------------------
+    // ДОСТУП К ЭЛЕМЕНТАМ СТРАНИЦЫ
+    // ------------------------------------------------------------
+    const $ = (id) => document.getElementById(id);
+    const dom = {
+      canvas: $('game'), overlay: $('overlay'), overlayTitle: $('overlay-title'),
+      overlaySub: $('overlay-sub'), overlayBtn: $('overlay-btn'), crosshair: $('crosshair'),
+      hurtFlash: $('hurt-flash'), hpFill: $('hp-fill'), hpText: $('hp-text'),
+      ammoText: $('ammo-text'), gunName: $('gun-name'), waveText: $('wave-text'),
+      scoreText: $('score-text'), killsText: $('kills-text'), coinsText: $('coins-text'),
+      centerMsg: $('center-msg'), pickupMsg: $('pickup-msg'), gunHint: $('gun-hint'), hud: $('hud'),
+      bossWrap: $('boss-wrap'), bossName: $('boss-name'), bossFill: $('boss-fill'),
+      comboText: $('combo-text'), shop: $('shop'), shopCoins: $('shop-coins'), shopItems: $('shop-items'),
+      musicInd: $('music-ind'), levelSelect: $('level-select'), levelItems: $('level-items'),
+      weaponSlots: $('weapon-slots'), enemyArrows: $('enemy-arrows'), enemiesText: $('enemies-text'),
+      corrWrap: $('corr-wrap'), corrFill: $('corr-fill'), corrText: $('corr-text'),
+      wheelTitle: $('wheel-title'),
+    };
+
+    // Стрелки-указатели на оставшихся врагов за краем экрана + счётчик
+    function updateEnemyArrows() {
+      let alive = 0;
+      for (const e of enemies) if (!e.dead) alive++;
+      dom.enemiesText.textContent = '👹 Врагов: ' + alive;
+      const container = dom.enemyArrows;
+      if (alive === 0) {
+        while (container.lastChild) container.removeChild(container.lastChild);
+        return;
+      }
+      // показываем стрелки только на ближайших врагов (иначе экран будет завален)
+      const sorted = enemies.filter((e) => !e.dead)
+        .sort((a, b) => a.group.position.distanceTo(player.pos) - b.group.position.distanceTo(player.pos))
+        .slice(0, 10);
+      const W = innerWidth, H = innerHeight, cx = W / 2, cy = H / 2;
+      const v = new THREE.Vector3();
+      for (let i = 0; i < sorted.length; i++) {
+        const e = sorted[i];
+        let el = container.children[i];
+        if (!el) { el = document.createElement('div'); el.className = 'e-arrow'; container.appendChild(el); }
+        v.copy(e.group.position);
+        v.y += 1.5;
+        v.project(camera);
+        // враг ЗА спиной: проекция зеркалится (z>1) — отражаем координаты, чтобы стрелка смотрела в правильную сторону
+        const behind = v.z > 1;
+        let nx = v.x, ny = -v.y;
+        if (behind) { nx = -nx; ny = -ny; }
+        // враг на экране — стрелка не нужна
+        if (!behind && nx > -0.15 && nx < 1.15 && ny > -0.15 && ny < 1.15) { el.style.display = 'none'; continue; }
+        el.style.display = 'block';
+        const sx = (nx * 0.5 + 0.5) * W;
+        const sy = (ny * 0.5 + 0.5) * H;
+        const dx = sx - cx, dy = sy - cy;
+        const k = Math.min((W / 2 - 30) / Math.abs(dx || 0.001), (H / 2 - 30) / Math.abs(dy || 0.001));
+        el.style.left = (cx + dx * k) + 'px';
+        el.style.top = (cy + dy * k) + 'px';
+        el.style.transform = 'translate(-50%,-50%) rotate(' + (Math.atan2(dy, dx) * 180 / Math.PI + 90) + 'deg)';
+        const dist = e.group.position.distanceTo(player.pos);
+        el.style.opacity = dist > 55 ? 0.35 : 1;
+        el.style.borderTopColor = e.type === 'boss' ? '#ff3a2a' : '#ffd27a';
+      }
+      while (container.children.length > sorted.length) container.removeChild(container.lastChild);
+    }
+
+    // ---------- НАСТОЯЩИЕ ТЕКСТУРЫ ИЗ ИНТЕРНЕТА (Poly Haven, CC0) ----------
+    // Кэш: каждый материал грузится один раз, потом переиспользуется между уровнями.
+    // Если интернета нет — игра не сломается: останутся нарисованные кодом текстуры.
+    const texCache = {};
+    function loadTex(id) {
+      if (texCache[id]) return texCache[id];
+      const entry = { tex: null, promise: null };
+      entry.promise = new Promise((resolve) => {
+        const loader = new THREE.TextureLoader();
+        loader.load(PH(id), (t) => {
+          t.wrapS = t.wrapT = THREE.RepeatWrapping;
+          t.colorSpace = THREE.SRGBColorSpace;
+          entry.tex = t;
+          resolve(t);
+        }, undefined, () => resolve(null)); // ошибка сети — остаётся процедурная текстура
+      });
+      texCache[id] = entry;
+      return entry;
+    }
+    // Применяем текстуру к материалу (сразу, если уже загружена, или когда догрузится).
+    // Клонируем текстуру на каждый материал: у скал/стен/колонн разный repeat,
+    // а общий объект текстуры (кэш) нельзя перезаписывать.
+    function applyTex(mat, id, repeat) {
+      const e = loadTex(id);
+      const apply = (t) => {
+        if (!t || !mat) return;
+        const c = t.clone();
+        c.repeat.set(repeat, repeat);
+        mat.map = c;
+        mat.needsUpdate = true;
+      };
+      if (e.tex) apply(e.tex);
+      else e.promise.then((t) => apply(t));
+    }
+    // Настоящее небо-куб с облаками (из текстуры three.js, дневной уровень)
+    let skyboxOk = true; // если CDN недоступен — небо останется градиентом
+    const skyboxTex = new THREE.CubeTextureLoader()
+      .setPath('https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/textures/cube/skyboxsun25deg/')
+      .load(['px.jpg', 'nx.jpg', 'py.jpg', 'ny.jpg', 'pz.jpg', 'nz.jpg'], () => {}, undefined, () => {
+        skyboxOk = false;
+        // небо не загрузилось — возвращаем градиент и солнце, если играем на дневном уровне
+        if (LEVELS[levelIndex].skybox) applyLevelTheme(levelIndex);
+      });
+
+    // Смена «декораций» уровня: небо, туман, песок, свет + перестройка карты
+    function applyLevelTheme(idx) {
+      const l = LEVELS[idx];
+      scene.background = (l.skybox && skyboxOk) ? skyboxTex : makeSkyTexture(l.sky);
+      sunSprite.visible = !(l.skybox && skyboxOk); // при настоящем небе солнце уже нарисовано
+      // туман: у «Прорыва» свой (густой — конец коридора тонет во мгле), у остальных стандартный
+      scene.fog = new THREE.Fog(l.horizon, l.fogNear !== undefined ? l.fogNear : 90, l.fogFar !== undefined ? l.fogFar : 300);
+      ground.material.color.setHex(0xffffff); // настоящая текстура не «красится»
+      applyTex(ground.material, l.tex.ground, 34);
+      sunLight.color.setHex(l.sun);
+      sunLight.intensity = l.sunInt;
+      hemiLight.color.setHex(l.hemi[0]);
+      hemiLight.groundColor.setHex(l.hemi[1]);
+      sunSprite.position.set(l.sunPos[0], l.sunPos[1], l.sunPos[2]);
+      barrier.material.color.setHex(l.sun);
+      barrierGlow.material.color.setHex(l.sun);
+      // красное кольцо-граница — только на аренах; в коридоре границы — стены каньона
+      barrier.visible = barrierGlow.visible = !l.corridor;
+      buildLevelMap(idx); // стены, скалы и колонны уровня
+    }
+
+    // ------------------------------------------------------------
+    // 3D-СЦЕНА
+    // ------------------------------------------------------------
+    // ---------- НЕБО: градиент, нарисованный кодом (цвета — из палитры уровня) ----------
+    function makeSkyTexture(stops) {
+      const c = document.createElement('canvas');
+      c.width = 8; c.height = 256;
+      const ctx = c.getContext('2d');
+      const g = ctx.createLinearGradient(0, 0, 0, 256);
+      g.addColorStop(0.0, stops[0]);   // верх неба
+      g.addColorStop(0.45, stops[1]);  // середина
+      g.addColorStop(0.72, stops[2]);  // дымка у горизонта
+      g.addColorStop(1.0, stops[3]);   // горизонт
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 8, 256);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
+
+    const scene = new THREE.Scene();
+    scene.background = makeSkyTexture(LEVELS[0].sky);
+    scene.fog = new THREE.Fog(LEVELS[0].horizon, 90, 300);
+
+    const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 600);
+    camera.rotation.order = 'YXZ';
+    scene.add(camera);
+
+    const renderer = new THREE.WebGLRenderer({ canvas: dom.canvas, antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // ТЕНИ — главный скачок в графике
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    // Свет: «солнце» с тенями + рассеянный свет неба и песка (перекрашивается под уровень)
+    const hemiLight = new THREE.HemisphereLight(0xbfd9ff, 0x8a6a3a, 0.55);
+    scene.add(hemiLight);
+    const sunLight = new THREE.DirectionalLight(0xfff0d0, 1.35);
+    sunLight.position.set(55, 90, 30);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.left = -70;
+    sunLight.shadow.camera.right = 70;
+    sunLight.shadow.camera.top = 70;
+    sunLight.shadow.camera.bottom = -70;
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 260;
+    scene.add(sunLight);
+
+    // Спрайт солнца на небе
+    function makeSunTexture() {
+      const c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      g.addColorStop(0, 'rgba(255,240,200,1)');
+      g.addColorStop(0.25, 'rgba(255,220,140,0.9)');
+      g.addColorStop(1, 'rgba(255,200,100,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 128, 128);
+      return new THREE.CanvasTexture(c);
+    }
+    const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeSunTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    sunSprite.position.set(-120, 90, -220);
+    sunSprite.scale.set(90, 90, 1);
+    scene.add(sunSprite);
+
+    // Текстуры рисуем кодом (canvas) — бесплатно и без файлов
+    function makeNoiseTexture(base, dark, light, speckles) {
+      const c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = base;
+      ctx.fillRect(0, 0, 128, 128);
+      for (let i = 0; i < speckles; i++) {
+        ctx.fillStyle = Math.random() < 0.5 ? dark : light;
+        ctx.globalAlpha = 0.2 + Math.random() * 0.45;
+        const s = 1 + Math.random() * 2.4;
+        ctx.fillRect(Math.random() * 128, Math.random() * 128, s, s);
+      }
+      ctx.globalAlpha = 1;
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
+    const sandTex = makeNoiseTexture('#d9b36b', '#c29a55', '#e8c78a', 900);
+
+    // Земля — большой песчаный круг
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(300, 64),
+      new THREE.MeshLambertMaterial({ map: sandTex })
+    );
+    sandTex.repeat.set(60, 60);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Кольцо-граница арены (красный «барьер»)
+    const barrier = new THREE.Mesh(
+      new THREE.CylinderGeometry(CONFIG.arenaRadius, CONFIG.arenaRadius, 3, 64, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xff5533, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false })
+    );
+    barrier.position.y = 1.5;
+    scene.add(barrier);
+    const barrierGlow = new THREE.Mesh(
+      new THREE.TorusGeometry(CONFIG.arenaRadius, 0.18, 6, 90),
+      new THREE.MeshBasicMaterial({ color: 0xff5522, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    barrierGlow.rotation.x = -Math.PI / 2;
+    barrierGlow.position.y = 0.05;
+    scene.add(barrierGlow);
+
+    // ---------- ПРЕПЯТСТВИЯ (для коллизий) ----------
+    // Каждая скала/колонна/стена попадает в список; игрок и враги не могут
+    // пройти сквозь них — это настоящие стены!
+    // Круглые препятствия: { mesh, x, z, r }. Стены-боксы: { mesh, minX, maxX, minZ, maxZ }.
+    const obstacles = [];
+    const levelMeshes = []; // меши текущего уровня (удаляются при смене карты)
+    const levelMats = [];  // материалы текущего уровня (удаляются вместе с картой)
+    function resolveObstacles(pos, radius) {
+      for (const o of obstacles) {
+        if (o.r) {
+          // круглое препятствие (скала, колонна)
+          const dx = pos.x - o.x, dz = pos.z - o.z;
+          const minD = o.r + radius;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < minD * minD && d2 > 0.0001) {
+            const d = Math.sqrt(d2);
+            const push = (minD - d) / d;
+            pos.x += dx * push;
+            pos.z += dz * push;
+          }
+        } else {
+          // стена-бокс: ближайшая точка к прямоугольнику
+          const cx = Math.max(o.minX, Math.min(pos.x, o.maxX));
+          const cz = Math.max(o.minZ, Math.min(pos.z, o.maxZ));
+          let dx = pos.x - cx, dz = pos.z - cz;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < radius * radius) {
+            if (d2 > 0.0001) {
+              const d = Math.sqrt(d2);
+              const push = (radius - d) / d;
+              pos.x += dx * push;
+              pos.z += dz * push;
+            } else {
+              // позиция ВНУТРИ бокса (наезд с разгона) — выталкиваем по ближайшей грани
+              const left = pos.x - o.minX, right = o.maxX - pos.x;
+              const near = pos.z - o.minZ, far = o.maxZ - pos.z;
+              const m = Math.min(left, right, near, far);
+              if (m === left) pos.x = o.minX - radius;
+              else if (m === right) pos.x = o.maxX + radius;
+              else if (m === near) pos.z = o.minZ - radius;
+              else pos.z = o.maxZ + radius;
+            }
+          }
+        }
+      }
+    }
+
+    // Движение врага с ОБХОДОМ препятствий: если путь заблокирован,
+    // враг «скользит» вдоль стены; если застрял надолго — ищет новый путь.
+    function moveWithSteering(enemy, dir, speed, dt) {
+      if (dir.lengthSq() < 0.0001) return false; // куда-то не идём (например, Плевун стоит)
+      const step = dir.clone().multiplyScalar(speed * dt);
+      const testPos = enemy.group.position.clone().add(step);
+      resolveObstacles(testPos, enemy.radius);
+      const actual = testPos.distanceTo(enemy.group.position);
+      if (actual < Math.max(step.length() * 0.5, 0.015)) {
+        // путь заблокирован — скользим вдоль стены
+        enemy.stuckT += dt;
+        if (enemy.stuckT > 0.45) {
+          // долго застряли: резко меняем направление и идём в обход
+          const a = Math.random() * Math.PI * 2;
+          dir.set(Math.cos(a), 0, Math.sin(a));
+          enemy.stuckT = 0;
+        } else {
+          const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+          dir.copy(enemy.flankSign > 0 ? perp : perp.negate());
+        }
+        testPos.copy(enemy.group.position).addScaledVector(dir, speed * dt);
+        resolveObstacles(testPos, enemy.radius);
+      } else {
+        enemy.stuckT = Math.max(0, enemy.stuckT - dt * 2);
+      }
+      enemy.group.position.copy(testPos);
+      return true;
+    }
+
+    // Толпа не слипается в одну кучу: враги мягко расталкивают друг друга
+    function separateEnemies(dt) {
+      const cell = 7;
+      const grid = new Map();
+      for (const e of enemies) {
+        if (e.dead) continue;
+        const kx = Math.round(e.group.position.x / cell);
+        const kz = Math.round(e.group.position.z / cell);
+        for (let gx = kx - 1; gx <= kx + 1; gx++) {
+          for (let gz = kz - 1; gz <= kz + 1; gz++) {
+            const key = gx + ':' + gz;
+            let arr = grid.get(key);
+            if (!arr) { arr = []; grid.set(key, arr); }
+            arr.push(e);
+          }
+        }
+      }
+      for (const e of enemies) {
+        if (e.dead) continue;
+        const kx = Math.round(e.group.position.x / cell);
+        const kz = Math.round(e.group.position.z / cell);
+        for (let gx = kx - 1; gx <= kx + 1; gx++) {
+          for (let gz = kz - 1; gz <= kz + 1; gz++) {
+            const arr = grid.get(gx + ':' + gz);
+            if (!arr) continue;
+            for (const n of arr) {
+              if (n === e || n.dead) continue;
+              const dx = e.group.position.x - n.group.position.x;
+              const dz = e.group.position.z - n.group.position.z;
+              const min = (e.radius + n.radius) * 0.85;
+              const d2 = dx * dx + dz * dz;
+              if (d2 < min * min && d2 > 0.0001) {
+                const d = Math.sqrt(d2);
+                const push = ((min - d) / d) * 0.5;
+                e.group.position.x += dx * push;
+                e.group.position.z += dz * push;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // ---------- ПОСТРОЕНИЕ КАРТЫ УРОВНЯ (хардкор! стены, лабиринты, укрытия) ----------
+    function clearLevelMap() {
+      for (const m of levelMeshes) {
+        scene.remove(m);
+        if (m.isGroup) m.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+        else if (m.geometry) m.geometry.dispose();
+      }
+      for (const mat of levelMats) mat.dispose();
+      // бочки убираем отдельно (их геометрии/материалы общие — не диспозим!)
+      for (const b of barrels) scene.remove(b.mesh);
+      barrels.length = 0;
+      levelMeshes.length = 0;
+      levelMats.length = 0;
+      obstacles.length = 0;
+    }
+    function addRock(rockMat) {
+      const baseR = 1.4 + Math.random() * 2.2;
+      const sx = 0.8 + Math.random() * 0.6;
+      const m = new THREE.Mesh(new THREE.DodecahedronGeometry(baseR, 1), rockMat);
+      m.scale.y = 0.55 + Math.random() * 0.5;
+      m.scale.x = sx;
+      const a = Math.random() * Math.PI * 2;
+      const r = 11 + Math.random() * 30;
+      m.position.set(Math.cos(a) * r, m.scale.y * 0.5, Math.sin(a) * r);
+      m.rotation.y = Math.random() * Math.PI;
+      m.rotation.x = (Math.random() - 0.5) * 0.2;
+      m.castShadow = m.receiveShadow = true;
+      scene.add(m);
+      levelMeshes.push(m);
+      obstacles.push({ mesh: m, x: m.position.x, z: m.position.z, r: baseR * sx * 0.9 });
+    }
+    function addPillar(pillarMat) {
+      const h = 3.5 + Math.random() * 4;
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.25, h, 10), pillarMat);
+      const a = Math.random() * Math.PI * 2;
+      const r = 9 + Math.random() * 32;
+      m.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r);
+      m.castShadow = m.receiveShadow = true;
+      scene.add(m);
+      levelMeshes.push(m);
+      obstacles.push({ mesh: m, x: m.position.x, z: m.position.z, r: 1.15 });
+    }
+    // Стена-бокс: настоящая стена с проходами. x/z — центр, w/d — размеры по XZ, h — высота.
+    // solid=true — «несущие» стены коридора: босс их НЕ сносит (иначе уйдёшь из коридора!)
+    function addWall(x, z, w, d, h, wallMat, solid) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+      m.position.set(x, h / 2, z);
+      m.castShadow = m.receiveShadow = true;
+      scene.add(m);
+      levelMeshes.push(m);
+      obstacles.push({ mesh: m, minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, solid: !!solid });
+    }
+    // Колонна в заданном месте (для коридора — укрытия по пути)
+    function addPillarAt(pillarMat, x, z) {
+      const h = 3.5 + Math.random() * 3;
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.25, h, 10), pillarMat);
+      m.position.set(x, h / 2, z);
+      m.castShadow = m.receiveShadow = true;
+      scene.add(m);
+      levelMeshes.push(m);
+      obstacles.push({ mesh: m, x, z, r: 1.15 });
+    }
+
+    // ---------- ВЗРЫВЧАТЫЕ БОЧКИ (подрывай орды!) ----------
+    // Красная бочка с жёлтыми полосами. Стреляй по ней — БУМ по площади,
+    // и соседние бочки взрываются цепной реакцией!
+    const barrelMatBody = new THREE.MeshLambertMaterial({ color: 0x9a2a1a, emissive: 0x1a0502 });
+    const barrelMatBand = new THREE.MeshLambertMaterial({ color: 0xd9b347 });
+    const barrelMatCap = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
+    const barrelGeoBody = new THREE.CylinderGeometry(0.45, 0.45, 1.0, 10);
+    const barrelGeoBand = new THREE.CylinderGeometry(0.46, 0.46, 0.2, 10);
+    const barrelGeoCap = new THREE.CylinderGeometry(0.15, 0.2, 0.1, 8);
+    let barrels = []; // { mesh, hp, x, z, r }
+    function addBarrel(x, z) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(barrelGeoBody, barrelMatBody);
+      const band1 = new THREE.Mesh(barrelGeoBand, barrelMatBand);
+      band1.position.y = 0.22;
+      const band2 = band1.clone();
+      band2.position.y = -0.22;
+      const cap = new THREE.Mesh(barrelGeoCap, barrelMatCap);
+      cap.position.y = 0.56;
+      g.add(body, band1, band2, cap);
+      g.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+      g.position.set(x, 0.5, z);
+      scene.add(g);
+      // бочка — препятствие: толпа обтекает её и копится рядом — потом БУМ!
+      barrels.push({ mesh: g, hp: 40, x, z, r: 0.7 });
+      obstacles.push({ mesh: g, x, z, r: 0.7 });
+    }
+    // Взрыв бочки: урон по площади (как ракета) + ЦЕПНАЯ РЕАКЦИЯ соседних
+    function explodeBarrel(i) {
+      const b = barrels[i];
+      if (!b) return;
+      barrels.splice(i, 1);
+      scene.remove(b.mesh);
+      const oi = obstacles.findIndex((o) => o.mesh === b.mesh);
+      if (oi >= 0) obstacles.splice(oi, 1);
+      const pos = b.mesh.position;
+      explodeRocket(pos, 7, 65); // огонь, ударная волна, урон ордам и игроку вблизи
+      spawnDust(pos, 8);
+      camShake = Math.max(camShake, 0.5);
+      // цепная реакция: каждая соседняя бочка — новый взрыв!
+      for (let j = barrels.length - 1; j >= 0; j--) {
+        if (barrels[j].mesh.position.distanceTo(pos) < 9) explodeBarrel(j);
+      }
+    }
+    // Попадание по бочке (пуля, взрыв ракеты, удар босса)
+    function damageBarrel(b, dmg) {
+      b.hp -= dmg;
+      if (b.hp > 0) return;
+      const i = barrels.indexOf(b);
+      if (i >= 0) explodeBarrel(i);
+    }
+    // Обелиск — высокий шпиль храма (препятствие)
+    function addObelisk(x, z, h, mat) {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.7, h, 6), mat);
+      m.position.set(x, h / 2, z);
+      m.castShadow = m.receiveShadow = true;
+      scene.add(m);
+      levelMeshes.push(m);
+      obstacles.push({ mesh: m, x, z, r: 0.55 });
+    }
+    // Шип — каменный клык из земли (Трон Владыки)
+    function addSpike(x, z, h, mat) {
+      const m = new THREE.Mesh(new THREE.ConeGeometry(0.5, h, 6), mat);
+      m.position.set(x, h / 2, z);
+      m.rotation.y = Math.random() * Math.PI;
+      m.castShadow = m.receiveShadow = true;
+      scene.add(m);
+      levelMeshes.push(m);
+      obstacles.push({ mesh: m, x, z, r: 0.45 });
+    }
+    // Арка-декор каньона: два столба и перекладина (под ней можно пройти)
+    function addArch(x, z, w, h, mat) {
+      const g = new THREE.Group();
+      const c1 = new THREE.Mesh(new THREE.BoxGeometry(0.7, h, 0.7), mat);
+      c1.position.set(-w / 2, h / 2, 0);
+      const c2 = c1.clone();
+      c2.position.x = w / 2;
+      const top = new THREE.Mesh(new THREE.BoxGeometry(w + 0.7, 0.7, 0.7), mat);
+      top.position.set(0, h - 0.35, 0);
+      g.add(c1, c2, top);
+      g.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+      g.position.set(x, 0, z);
+      scene.add(g);
+      levelMeshes.push(g);
+    }
+    // Босс СНОСИТ стены и скалы на своём пути — эффектно и не даёт ему застрять!
+    function smashObstacles(pos, radius) {
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const o = obstacles[i];
+        if (o.solid) continue; // несущие стены коридора босс не ломает
+        let d;
+        if (o.r) d = Math.hypot(pos.x - o.x, pos.z - o.z);
+        else {
+          const cx = Math.max(o.minX, Math.min(pos.x, o.maxX));
+          const cz = Math.max(o.minZ, Math.min(pos.z, o.maxZ));
+          d = Math.hypot(pos.x - cx, pos.z - cz);
+        }
+        if (d < radius + (o.r || 1.5)) {
+          // бочка — босс её задел: ВЗРЫВ (и цепная реакция!)
+          const bi = barrels.findIndex((b) => b.mesh === o.mesh);
+          if (bi >= 0) { explodeBarrel(bi); continue; }
+          // обломки и пыль — стена разлетается на куски!
+          const mp = o.mesh.position;
+          spawnGibs(new THREE.Vector3(mp.x, mp.y, mp.z), 'charger');
+          spawnDust(new THREE.Vector3(mp.x, 0.2, mp.z), 8);
+          camShake = Math.max(camShake, 0.4);
+          sounds.boom();
+          scene.remove(o.mesh);
+          if (o.mesh.geometry) o.mesh.geometry.dispose();
+          const mi = levelMeshes.indexOf(o.mesh);
+          if (mi >= 0) levelMeshes.splice(mi, 1);
+          obstacles.splice(i, 1);
+        }
+      }
+    }
+    // Черепа на песке — атмосфера (декор, без коллизий)
+    function addSkull() {
+      const g = new THREE.Group();
+      const bone = new THREE.MeshLambertMaterial({ color: 0xe8e0c8 });
+      const eyeMat = new THREE.MeshLambertMaterial({ color: 0x1a1410 });
+      levelMats.push(bone, eyeMat);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), bone);
+      head.scale.set(1, 1.15, 1.2);
+      head.castShadow = true;
+      const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 0.12), bone);
+      jaw.position.set(0, -0.17, 0.08);
+      jaw.castShadow = true;
+      const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), eyeMat);
+      eyeL.position.set(-0.06, 0.02, 0.21);
+      const eyeR = eyeL.clone();
+      eyeR.position.x = 0.06;
+      g.add(head, jaw, eyeL, eyeR);
+      const a = Math.random() * Math.PI * 2;
+      const r = 9 + Math.random() * 36;
+      g.position.set(Math.cos(a) * r, 0.09, Math.sin(a) * r);
+      g.rotation.y = Math.random() * Math.PI;
+      g.rotation.z = (Math.random() - 0.5) * 0.4;
+      scene.add(g);
+      levelMeshes.push(g);
+    }
+    // Карта уровня: у каждого уровня своя «планировка» — от открытой арены до плотного лабиринта
+    function buildLevelMap(idx) {
+      clearLevelMap();
+      const l = LEVELS[idx];
+      // материалы без карты; текстура (CC0, Poly Haven) применится, когда догрузится.
+      // Цвет материала — фирменная тонировка уровня (карты отличаются даже без текстур)
+      const rockMat = new THREE.MeshLambertMaterial({ color: l.tint });
+      const wallMat = new THREE.MeshLambertMaterial({ color: l.tint });
+      const pillarMat = new THREE.MeshLambertMaterial({ color: l.tint });
+      levelMats.push(rockMat, wallMat, pillarMat);
+      applyTex(rockMat, l.tex.rock, 2);
+      applyTex(wallMat, l.tex.wall, 2.5);
+      applyTex(pillarMat, l.tex.rock, 1.5);
+      // центр всегда свободен — тут появляется игрок
+      const free = (x, z) => Math.hypot(x, z) > 6;
+      if (idx === 0) {
+        // ПЕСЧАНАЯ АРЕНА: открытое поле + укрытия-щиты + колонны
+        for (let i = 0; i < 14; i++) addRock(rockMat);
+        for (let i = 0; i < 8; i++) addPillar(pillarMat);
+        for (let i = 0; i < 4; i++) { // 4 стены-укрытия по кругу
+          const a = (i / 4) * Math.PI * 2;
+          addWall(Math.cos(a) * 12, Math.sin(a) * 12, 7, 1.2, 3, wallMat);
+        }
+        for (let i = 0; i < 6; i++) addSkull();
+      } else if (idx === 1) {
+        // ХРАМ НОЧИ: два кольца стен с проходами (лабиринт-арена)
+        const ring = (r, count, wallLen, seed) => {
+          for (let i = 0; i < count; i++) {
+            const a0 = (i / count) * Math.PI * 2 + seed;
+            const cx = Math.cos(a0) * r, cz = Math.sin(a0) * r;
+            const perp = (i / count) * Math.PI * 2 + seed;
+            const x1 = cx + Math.cos(perp + Math.PI / 2) * wallLen / 2;
+            const z1 = cz + Math.sin(perp + Math.PI / 2) * wallLen / 2;
+            const x2 = cx - Math.cos(perp + Math.PI / 2) * wallLen / 2;
+            const z2 = cz - Math.sin(perp + Math.PI / 2) * wallLen / 2;
+            // стена как тонкий бокс между двумя точками
+            const mx = (x1 + x2) / 2, mz = (z1 + z2) / 2;
+            const len = Math.hypot(x2 - x1, z2 - z1);
+            const m = new THREE.Mesh(new THREE.BoxGeometry(len, 3.2, 1.1), wallMat);
+            m.position.set(mx, 1.6, mz);
+            m.rotation.y = Math.atan2(z2 - z1, x2 - x1);
+            m.castShadow = m.receiveShadow = true;
+            scene.add(m);
+            levelMeshes.push(m);
+            // бокс в локальных координатах (повёрнутый) — считаем AABB с запасом
+            const hw = (len / 2) * Math.abs(Math.cos(m.rotation.y)) + 0.55 * Math.abs(Math.sin(m.rotation.y));
+            const hd = (len / 2) * Math.abs(Math.sin(m.rotation.y)) + 0.55 * Math.abs(Math.cos(m.rotation.y));
+            obstacles.push({ mesh: m, minX: mx - hw, maxX: mx + hw, minZ: mz - hd, maxZ: mz + hd });
+          }
+        };
+        ring(13, 6, 6, 0.1);   // внутреннее кольцо
+        ring(23, 10, 6, 0.5);  // внешнее кольцо
+        for (let i = 0; i < 8; i++) addPillar(pillarMat);
+        for (let i = 0; i < 4; i++) addRock(rockMat);
+        // обелиски храма — высокие шпили по кругу
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 + 0.2;
+          addObelisk(Math.cos(a) * 30, Math.sin(a) * 30, 5 + Math.random() * 3, rockMat);
+        }
+        for (let i = 0; i < 6; i++) addSkull();
+      } else if (idx === 2) {
+        // КАНЬОН ЗАКАТА: длинные хребты-стены с разрывами, узкие проходы
+        const ridge = (x, z, len, ang, h) => {
+          const m = new THREE.Mesh(new THREE.BoxGeometry(len, h, 1.6), wallMat);
+          m.position.set(x, h / 2, z);
+          m.rotation.y = ang;
+          m.castShadow = m.receiveShadow = true;
+          scene.add(m);
+          levelMeshes.push(m);
+          const hw = (len / 2) * Math.abs(Math.cos(ang)) + 0.8 * Math.abs(Math.sin(ang));
+          const hd = (len / 2) * Math.abs(Math.sin(ang)) + 0.8 * Math.abs(Math.cos(ang));
+          obstacles.push({ mesh: m, minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd });
+        };
+        ridge(-18, -20, 26, 0.2, 4);
+        ridge(20, -14, 30, -0.15, 4.5);
+        ridge(-12, 16, 34, 0.35, 4);
+        ridge(16, 22, 22, -0.4, 4.5);
+        ridge(2, -28, 24, 0.5, 3.8);
+        ridge(-24, 6, 18, -0.5, 3.8);
+        // каменные арки каньона — проходи под ними!
+        addArch(-26, -12, 8, 6.5, rockMat);
+        addArch(26, 10, 9, 7, rockMat);
+        addArch(4, -6, 7, 6, rockMat);
+        for (let i = 0; i < 12; i++) addRock(rockMat);
+        for (let i = 0; i < 6; i++) addPillar(pillarMat);
+        for (let i = 0; i < 6; i++) addSkull();
+      } else if (idx === 3) {
+        // ТРОН ВЛАДЫКИ: плотный лабиринт — стены-острова в шахматном порядке
+        for (let gx = -3; gx <= 3; gx++) {
+          for (let gz = -3; gz <= 3; gz++) {
+            const cx = gx * 10, cz = gz * 10;
+            if (!free(cx, cz)) continue;
+            const odd = (gx + gz) % 2;
+            if (Math.abs(cx) > 34 || Math.abs(cz) > 34) continue;
+            if (odd === 0) {
+              // горизонтальная стена с проходом посередине
+              if (Math.abs(gz) < 2 || Math.abs(cx) > 15) addWall(cx, cz + 2.2, 9, 1.3, 3.6, wallMat);
+              if (Math.abs(cx) < 16 || Math.abs(gz) > 2) addWall(cx - 2, cz - 2.2, 9, 1.3, 3.6, wallMat);
+            }
+          }
+        }
+        // шипы-клыки Трона — острые, как зубы
+        for (let i = 0; i < 14; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 8 + Math.random() * 30;
+          addSpike(Math.cos(a) * r, Math.sin(a) * r, 2 + Math.random() * 2.5, rockMat);
+        }
+        for (let i = 0; i < 12; i++) addRock(rockMat);
+        for (let i = 0; i < 10; i++) addPillar(pillarMat);
+        for (let i = 0; i < 8; i++) addSkull();
+      } else {
+        // ПРОРЫВ ЧЕРЕЗ КАНЬОН: длинный коридор по оси Z с ордами по пути!
+        const len = l.corrStartZ - l.corrFinishZ; // ~350 метров
+        const midZ = (l.corrStartZ + l.corrFinishZ) / 2;
+        // несущие стены каньона (solid — их нельзя сломать, иначе выйдешь из коридора)
+        addWall(-l.corrW, midZ, 1.6, len + 24, 16, wallMat, true);
+        addWall(l.corrW, midZ, 1.6, len + 24, 16, wallMat, true);
+        // тупик за финишем — дальше хода нет
+        addWall(0, l.corrFinishZ - 16, len + 26, 1.6, 16, wallMat, true);
+        // ВРАТА: 4 арки на равном расстоянии + пилоны-препятствия по бокам
+        const gates = 4;
+        for (let g = 1; g <= gates; g++) {
+          const zz = l.corrStartZ - (len / (gates + 1)) * g;
+          addArch(0, zz, l.corrW * 2 - 3, 9, rockMat);
+          addObelisk(-l.corrW + 2.4, zz, 9, rockMat);
+          addObelisk(l.corrW - 2.4, zz, 9, rockMat);
+        }
+        // укрытия: валуны в шахматном порядке у стен + колонны со смещением от центра
+        let side = 1;
+        for (let z = l.corrStartZ - 30; z > l.corrFinishZ + 30; z -= 26) {
+          const sx = side * (7 + Math.random() * 4);
+          const rm = new THREE.Mesh(new THREE.DodecahedronGeometry(1.3 + Math.random() * 1.4, 1), rockMat);
+          rm.scale.y = 0.8;
+          rm.position.set(sx, rm.scale.y * 0.5, z + (Math.random() - 0.5) * 4);
+          rm.rotation.y = Math.random() * Math.PI;
+          rm.castShadow = rm.receiveShadow = true;
+          scene.add(rm);
+          levelMeshes.push(rm);
+          obstacles.push({ mesh: rm, x: sx, z: rm.position.z, r: 1.3 });
+          side *= -1;
+        }
+        for (let z = l.corrStartZ - 60; z > l.corrFinishZ + 40; z -= 40) {
+          addPillarAt(pillarMat, (Math.random() * 2 - 1) * 4, z + (Math.random() - 0.5) * 8);
+        }
+        // ВЗРЫВЧАТЫЕ БОЧКИ вдоль всего пути — замани орду и подрывай!
+        for (let z = l.corrStartZ - 24; z > l.corrFinishZ + 24; z -= 30) {
+          addBarrel((Math.random() * 2 - 1) * 5, z + (Math.random() - 0.5) * 5);
+        }
+        // у каждых врат — пара бочек (толпа копится у прохода → БУМ!)
+        for (let g = 1; g <= gates; g++) {
+          const zz = l.corrStartZ - (len / (gates + 1)) * g;
+          addBarrel(4, zz + 3);
+          addBarrel(-4, zz - 3);
+        }
+        for (let i = 0; i < 10; i++) addSkull();
+      }
+      // на аренах — по паре бочек для веселья (в коридоре они уже расставлены)
+      if (!l.corridor) {
+        for (let i = 0; i < 6; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 9 + Math.random() * 28;
+          addBarrel(Math.cos(a) * r, Math.sin(a) * r);
+        }
+      }
+    }
+
+    // Пирамиды на горизонте — постоянный декор (далеко, без коллизий)
+    function addPyramid(pyramidTex) {
+      const s = 30 + Math.random() * 50;
+      const m = new THREE.Mesh(new THREE.ConeGeometry(s, s * 0.8, 4), new THREE.MeshLambertMaterial({ map: pyramidTex }));
+      m.rotation.y = Math.PI / 4;
+      const a = Math.random() * Math.PI * 2;
+      const r = 180 + Math.random() * 120;
+      m.position.set(Math.cos(a) * r, s * 0.4, Math.sin(a) * r);
+      m.castShadow = true;
+      scene.add(m);
+    }
+    const pyramidTex = makeNoiseTexture('#8a5f2e', '#6f4a22', '#a17340', 700);
+    for (let i = 0; i < 6; i++) addPyramid(pyramidTex);
+
+    function makeCloud() {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+      for (let i = 0; i < 5; i++) {
+        const s = new THREE.Mesh(new THREE.SphereGeometry(3 + Math.random() * 4, 8, 6), mat);
+        s.position.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 7);
+        s.scale.y = 0.5;
+        g.add(s);
+      }
+      return g;
+    }
+    const clouds = [];
+    for (let i = 0; i < 5; i++) {
+      const c = makeCloud();
+      c.position.set((Math.random() - 0.5) * 400, 45 + Math.random() * 25, (Math.random() - 0.5) * 400);
+      clouds.push({ group: c, speed: 0.6 + Math.random() * 1.2 });
+      scene.add(c);
+    }
+
+    // ------------------------------------------------------------
+    // ИГРОК
+    // ------------------------------------------------------------
+    const player = {
+      pos: new THREE.Vector3(0, CONFIG.eyeHeight, 0),
+      vel: new THREE.Vector3(),
+      yaw: 0, pitch: 0,
+      hp: maxHp(),
+      onGround: true,
+      invulnUntil: 0,
+    };
+
+    // ---------- ОРУЖИЕ В РУКАХ ----------
+    // Винтовка: длинная, тёмная, с прицелом, магазином и прикладом
+    function buildRifle() {
+      const g = new THREE.Group();
+      const dark = new THREE.MeshLambertMaterial({ color: 0x2b2f36 });
+      const gunMetal = new THREE.MeshLambertMaterial({ color: 0x4a5260 });
+      const wood = new THREE.MeshLambertMaterial({ color: 0x4a2f1a });
+      // ствол + кожух
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.62, 8), gunMetal);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(0, 0.03, -0.78);
+      const shroud = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.4), dark);
+      shroud.position.set(0, 0.03, -0.55);
+      const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.038, 0.07, 8), dark);
+      tip.rotation.x = Math.PI / 2;
+      tip.position.set(0, 0.03, -0.98);
+      // корпус
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.42), dark);
+      body.position.set(0, 0, -0.2);
+      // прицел
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.05, 0.1), gunMetal);
+      sight.position.set(0, 0.09, -0.42);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, 0.012), gunMetal);
+      post.position.set(0, 0.07, -0.6);
+      // магазин (изогнутый)
+      const mag = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.16, 0.08), gunMetal);
+      mag.position.set(0, -0.12, -0.3);
+      mag.rotation.x = -0.15;
+      // рукоять и приклад
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.06), wood);
+      grip.position.set(0, -0.14, -0.1);
+      grip.rotation.x = 0.22;
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.09, 0.3), wood);
+      stock.position.set(0, -0.02, 0.18);
+      g.add(barrel, shroud, tip, body, sight, post, mag, grip, stock);
+      g.userData.muzzle = new THREE.Vector3(0, 0.03, -0.98);
+      return g;
+    }
+    // Дробовик: два ствола, широкий, деревянное цевьё и приклад
+    function buildShotgun() {
+      const g = new THREE.Group();
+      const dark = new THREE.MeshLambertMaterial({ color: 0x24262b });
+      const gunMetal = new THREE.MeshLambertMaterial({ color: 0x3a3f47 });
+      const wood = new THREE.MeshLambertMaterial({ color: 0x6b4a2b });
+      // два ствола рядом
+      const bL = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.62, 10), gunMetal);
+      bL.rotation.x = Math.PI / 2;
+      bL.position.set(-0.035, 0.03, -0.72);
+      const bR = bL.clone();
+      bR.position.x = 0.035;
+      const tipL = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.06, 10), dark);
+      tipL.rotation.x = Math.PI / 2;
+      tipL.position.set(-0.035, 0.03, -0.92);
+      const tipR = tipL.clone();
+      tipR.position.x = 0.035;
+      // ствольная коробка
+      const recv = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.1, 0.22), dark);
+      recv.position.set(0, 0, -0.32);
+      // цевьё (дерево)
+      const forend = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.06, 0.2), wood);
+      forend.position.set(0, -0.05, -0.55);
+      // рукоять (пистолетная) и приклад
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.15, 0.07), wood);
+      grip.position.set(0, -0.13, -0.16);
+      grip.rotation.x = 0.25;
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.26), wood);
+      stock.position.set(0, -0.02, 0.1);
+      g.add(bL, bR, tipL, tipR, recv, forend, grip, stock);
+      g.userData.muzzle = new THREE.Vector3(0, 0.03, -0.92);
+      return g;
+    }
+    // Миниган: массивный, с вращающимися стволами и лентой патронов
+    function buildMinigun() {
+      const g = new THREE.Group();
+      const dark = new THREE.MeshLambertMaterial({ color: 0x1e2126 });
+      const gunMetal = new THREE.MeshLambertMaterial({ color: 0x3a3f47 });
+      const yellow = new THREE.MeshLambertMaterial({ color: 0xd8b23c });
+      // блок из 3 стволов
+      for (let i = 0; i < 3; i++) {
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.6, 8), gunMetal);
+        barrel.rotation.x = Math.PI / 2;
+        const a = (i / 3) * Math.PI * 2;
+        barrel.position.set(Math.cos(a) * 0.045, 0.03 + Math.sin(a) * 0.045, -0.75);
+        g.add(barrel);
+      }
+      const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.1, 10), dark);
+      tip.rotation.x = Math.PI / 2;
+      tip.position.set(0, 0.03, -1.0);
+      // корпус
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 0.5), dark);
+      body.position.set(0, 0, -0.2);
+      // лента патронов
+      const belt = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.03, 0.6), yellow);
+      belt.position.set(0.1, -0.06, -0.15);
+      belt.rotation.z = 0.2;
+      // рукояти
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 0.08), dark);
+      grip.position.set(0, -0.16, -0.1);
+      grip.rotation.x = 0.3;
+      const grip2 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.06), dark);
+      grip2.position.set(0, -0.05, -0.45);
+      grip2.rotation.x = -0.2;
+      g.add(tip, body, belt, grip, grip2);
+      g.userData.muzzle = new THREE.Vector3(0, 0.03, -1.0);
+      return g;
+    }
+    // Ракетница: толстая труба с прицелом и рукоятью
+    function buildRocketLauncher() {
+      const g = new THREE.Group();
+      const dark = new THREE.MeshLambertMaterial({ color: 0x2c3324 });
+      const gunMetal = new THREE.MeshLambertMaterial({ color: 0x4a5a3a });
+      // труба
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.75, 12), gunMetal);
+      tube.rotation.x = Math.PI / 2;
+      tube.position.set(0, 0.03, -0.7);
+      // раструб
+      const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.075, 0.12, 12), dark);
+      muzzle.rotation.x = Math.PI / 2;
+      muzzle.position.set(0, 0.03, -1.0);
+      // прицел сверху
+      const sight = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.05), dark);
+      sight.position.set(0, 0.14, -0.5);
+      // рукоять
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 0.07), dark);
+      grip.position.set(0, -0.15, -0.25);
+      grip.rotation.x = 0.2;
+      // вторая рука спереди
+      const grip2 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.05), dark);
+      grip2.position.set(0, -0.04, -0.6);
+      g.add(tube, muzzle, sight, grip, grip2);
+      g.userData.muzzle = new THREE.Vector3(0, 0.03, -1.0);
+      return g;
+    }
+    const gunRifle = buildRifle();
+    gunRifle.position.set(0.24, -0.17, -0.5);
+    const gunShotgun = buildShotgun();
+    gunShotgun.position.set(0.3, -0.2, -0.45);
+    const gunMinigun = buildMinigun();
+    gunMinigun.position.set(0.3, -0.2, -0.45);
+    const gunRocket = buildRocketLauncher();
+    gunRocket.position.set(0.28, -0.19, -0.5);
+    // Золотое колесо — модель оружия слота 5 (и вид снизу при езде на G)
+    function buildHandWheel() {
+      const g = new THREE.Group();
+      const gold = new THREE.MeshLambertMaterial({ color: 0xd9a441, emissive: 0x5a3a08 });
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.04, 8, 20), gold);
+      const s1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.03), gold);
+      const s2 = s1.clone(); s2.rotation.x = Math.PI / 3;
+      const s3 = s1.clone(); s3.rotation.x = -Math.PI / 3;
+      g.add(rim, s1, s2, s3);
+      g.userData.muzzle = new THREE.Vector3(0, 0.03, -0.7);
+      g.userData.spokes = [s1, s2, s3];
+      return g;
+    }
+    const gunWheel = buildHandWheel();
+    gunWheel.position.set(0.3, -0.2, -0.45);
+    const allGuns = [gunRifle, gunShotgun, gunMinigun, gunRocket, gunWheel];
+    camera.add(...allGuns);
+    allGuns.forEach((g, i) => { g.visible = i === 0; });
+
+    // Золотое моноколесо — видно внизу экрана, пока едешь (клавиша G)
+    const rideWheelView = buildHandWheel();
+    rideWheelView.scale.setScalar(1.5);
+    rideWheelView.position.set(0.45, -0.78, -0.55);
+    rideWheelView.visible = false;
+    camera.add(rideWheelView);
+
+    // Вспышка выстрела у дула — спрайт-«звезда»
+    function makeFlashTexture() {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const ctx = c.getContext('2d');
+      const cx = 32, cy = 32;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 32);
+      g.addColorStop(0, 'rgba(255,255,230,1)');
+      g.addColorStop(0.35, 'rgba(255,210,100,0.9)');
+      g.addColorStop(1, 'rgba(255,130,20,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a0 = (i / 8) * Math.PI * 2;
+        const a1 = a0 + (Math.PI * 2) / 16;
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a0) * 32, cy + Math.sin(a0) * 32);
+        ctx.lineTo(cx + Math.cos(a1) * 32, cy + Math.sin(a1) * 32);
+        ctx.closePath();
+      }
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      ctx.fill();
+      return new THREE.CanvasTexture(c);
+    }
+    const flashSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeFlashTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    flashSprite.visible = false;
+    gunRifle.add(flashSprite);
+    let flashLife = 0;
+
+    // Свет от выстрела
+    const muzzleLight = new THREE.PointLight(0xffd27a, 0, 9);
+    muzzleLight.position.set(0.3, -0.2, -0.8);
+    camera.add(muzzleLight);
+
+    // ------------------------------------------------------------
+    // СОСТОЯНИЕ ИГРЫ
+    // ------------------------------------------------------------
+    let state = 'menu';            // 'menu' | 'playing' | 'paused' | 'dead'
+    let gameTime = 0;
+    let wave = 0, score = 0, kills = 0;
+    let enemies = [], pickups = [], tracers = [], blood = [], fireballs = [];
+    let spawnQueue = [];
+    let waveState = 'idle';        // 'idle' | 'spawning' | 'pause'
+    let wavePauseTimer = 0;
+    // режим «ПРОРЫВ» (коридор): таймер орд, флаг финальной волны, счётчик врат
+    let corrHordeT = 0, corrFinal = false, corrGates = 0;
+    let current = 0;               // индекс текущего оружия
+    let hurtFlash = 0;
+    let camShake = 0;
+    let recoilUp = 0;
+    let moving = false;
+    let bobPhase = 0;
+    let stepTimer = 0;
+    let combo = 0, comboTimer = 0; // комбо-множитель очков
+    let comboHideT = null;
+
+    // ------------------------------------------------------------
+    // ЗВУК: настоящие файлы (Kenney, лицензия CC0) грузятся из CDN,
+    // а если сеть недоступна — включается синтез (запасной вариант)
+    // ------------------------------------------------------------
+    const CDN = 'https://cdn.jsdelivr.net/gh/subtiliorars-sys/game-audio-assets@HEAD/';
+    // Голоса монстров — мужские выкрики Kenney (CC0), с понижением тона звучат как рык
+    const VOICE = (n) => CDN + 'vendor/kenney/voiceover-pack/Male/' + n + '.ogg';
+    const SOUND_SRC = {
+      rifle:   CDN + 'vendor/kenney/impact-sounds/Audio/impactMetal_medium_000.ogg',
+      shotgun: CDN + 'vendor/kenney/impact-sounds/Audio/impactPlate_heavy_000.ogg',
+      hit:     CDN + 'vendor/kenney/impact-sounds/Audio/impactPunch_medium_000.ogg',
+      hurt:    CDN + 'vendor/kenney/impact-sounds/Audio/impactPunch_heavy_001.ogg',
+      kill:    CDN + 'vendor/kenney/impact-sounds/Audio/impactSoft_heavy_000.ogg',
+      step:    CDN + 'vendor/kenney/impact-sounds/Audio/footstep_grass_000.ogg',
+      pickup:  CDN + 'vendor/kenney/digital-audio/Audio/powerUp1.ogg',
+      click:   CDN + 'vendor/kenney/ui-audio/Audio/click2.ogg',
+      reload1: CDN + 'vendor/kenney/rpg-audio/Audio/metalClick.ogg',
+      reload2: CDN + 'vendor/kenney/rpg-audio/Audio/metalLatch.ogg',
+      reload3: CDN + 'vendor/kenney/rpg-audio/Audio/drawKnife2.ogg',
+      // 10 голосов для «речи» монстров (низкий тон = рык)
+      v1: VOICE(1), v2: VOICE(2), v3: VOICE(3), v4: VOICE(4), v5: VOICE(5),
+      v6: VOICE(6), v7: VOICE(7), v8: VOICE(8), v9: VOICE(9), v10: VOICE(10),
+    };
+
+    // ---------- МУЗЫКА (эмбиент меню + боевая + рёв босса) ----------
+    const musMenu = $('mus-menu');
+    const musBattle = $('mus-battle');
+    const musBoss = $('mus-boss');
+    const musRoar = $('mus-roar');
+    let musicOn = loadVal('gd_music', 1) === 1; // музыка включена (запоминается)
+    let musicMode = 'menu'; // 'menu' | 'battle' | 'boss'
+    let mouseSens = loadVal('gd_sens', 1); // чувствительность мыши (1 = стандарт, клавиши [ ])
+    const MUS_VOL = 0.6; // общая громкость музыки
+    const MUS_TRACKS = { menu: 'mus-menu', battle: 'mus-battle', boss: 'mus-boss' };
+    let musicTimer = null; // текущий интервал плавного перехода (чтобы не было гонок)
+    function setMusic(mode) {
+      if (mode === musicMode) return;
+      const from = $('mus-' + musicMode); // старый трек (menu/battle/boss → mus-menu и т.д.)
+      const to = $(MUS_TRACKS[mode]);      // новый трек
+      musicMode = mode;
+      // убираем предыдущий переход, чтобы интервалы не дрались за громкость
+      if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+      // плавно гасим старый трек
+      const iv = setInterval(() => {
+        from.volume = Math.max(0, from.volume - 0.05);
+        if (from.volume <= 0) { clearInterval(iv); from.pause(); }
+      }, 40);
+      musicTimer = iv;
+      if (musicOn) {
+        to.volume = 0;
+        to.play().catch(() => {}); // play() сам начнёт загрузку (preload=none)
+        const iv2 = setInterval(() => {
+          if (!musicOn) { clearInterval(iv2); return; } // игрок выключил музыку — стоп!
+          to.volume = Math.min(MUS_VOL, to.volume + 0.04);
+          if (to.volume >= MUS_VOL) clearInterval(iv2);
+        }, 40);
+      }
+    }
+    function playRoar() {
+      if (!musicOn) return;
+      musRoar.currentTime = 0;
+      musRoar.volume = 1;
+      musRoar.play().catch(() => {});
+    }
+
+    let audio = null;
+    const buffers = {};
+    function initAudio() {
+      if (audio) return;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      audio = { ctx: new AC(), master: null, sfx: null };
+      audio.master = audio.ctx.createGain();
+      audio.master.gain.value = 0.9;
+      audio.master.connect(audio.ctx.destination);
+      audio.sfx = audio.ctx.createGain();
+      audio.sfx.gain.value = 0.8;
+      audio.sfx.connect(audio.master);
+      // загружаем звуковые файлы фоном (из интернета)
+      for (const [name, url] of Object.entries(SOUND_SRC)) {
+        fetch(url)
+          .then((r) => r.arrayBuffer())
+          .then((b) => audio.ctx.decodeAudioData(b))
+          .then((buf) => { buffers[name] = buf; })
+          .catch(() => {});
+      }
+    }
+    function play(name, opts = {}) {
+      const buf = buffers[name];
+      if (audio && buf) {
+        const src = audio.ctx.createBufferSource();
+        src.buffer = buf;
+        if (opts.rate) src.playbackRate.value = opts.rate;
+        const g = audio.ctx.createGain();
+        g.gain.value = opts.vol ?? 1;
+        src.connect(g);
+        g.connect(audio.sfx);
+        src.start();
+      } else if (synth[name]) {
+        synth[name](); // запасной синтез, пока файл не загрузился
+      }
+    }
+    // --- Синтез на всякий случай (если файлы не загрузились) ---
+    function noiseBurst(dur, filterType, freq, vol, slideTo) {
+      if (!audio) return;
+      const ctx = audio.ctx;
+      const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const f = ctx.createBiquadFilter();
+      f.type = filterType;
+      f.frequency.value = freq;
+      if (slideTo) f.frequency.exponentialRampToValueAtTime(Math.max(slideTo, 1), ctx.currentTime + dur);
+      const g = ctx.createGain();
+      g.gain.value = vol;
+      src.connect(f); f.connect(g); g.connect(audio.sfx);
+      src.start();
+      src.stop(ctx.currentTime + dur);
+    }
+    function tone(freq, dur, type, vol, slideTo) {
+      if (!audio) return;
+      const ctx = audio.ctx;
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = freq;
+      if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(slideTo, 1), ctx.currentTime + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(vol, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+      o.connect(g); g.connect(audio.sfx);
+      o.start(); o.stop(ctx.currentTime + dur);
+    }
+    const synth = {
+      rifle()   { noiseBurst(0.09, 'lowpass', 3500, 0.5, 500); tone(220, 0.08, 'square', 0.12, 70); },
+      shotgun() { noiseBurst(0.22, 'lowpass', 1400, 0.8, 300); tone(120, 0.2, 'square', 0.25, 45); },
+      hit()     { noiseBurst(0.05, 'lowpass', 1800, 0.3); },
+      dry()     { noiseBurst(0.03, 'highpass', 2000, 0.15); },
+      hurt()    { tone(110, 0.25, 'sawtooth', 0.4, 55); },
+      kill()    { noiseBurst(0.15, 'lowpass', 900, 0.4, 200); tone(160, 0.12, 'triangle', 0.2, 60); },
+      pickup()  { tone(660, 0.08, 'sine', 0.25); setTimeout(() => tone(990, 0.1, 'sine', 0.25), 70); },
+      wave()    { tone(180, 0.5, 'sawtooth', 0.3, 90); },
+      reload()  {
+        noiseBurst(0.05, 'highpass', 3000, 0.2);
+        setTimeout(() => noiseBurst(0.05, 'highpass', 2000, 0.2), 150);
+        setTimeout(() => noiseBurst(0.06, 'highpass', 2500, 0.25), 320);
+      },
+      switch_() { noiseBurst(0.04, 'highpass', 2500, 0.2); },
+      step()    { noiseBurst(0.04, 'lowpass', 800, 0.2); },
+      click()   { noiseBurst(0.03, 'highpass', 2500, 0.15); },
+      // запасной «рык» для голосов монстров, пока файлы не загрузились
+      v1() {}, v2() {}, v3() {}, v4() {}, v5() {},
+      v6() {}, v7() {}, v8() {}, v9() {}, v10() {},
+    };
+    // если файл голоса ещё не загружен — издаём низкое рычание вместо тишины
+    function synthGrowl() {
+      noiseBurst(0.4, 'lowpass', 300, 0.35);
+      tone(60 + Math.random() * 40, 0.35, 'sawtooth', 0.2, 40);
+    }
+    for (let i = 1; i <= 10; i++) synth['v' + i] = synthGrowl;
+    // Готовые «монтажи» звуков для игры
+    const sounds = {
+      rifle()   { play('rifle', { rate: 0.94 + Math.random() * 0.12 }); },
+      shotgun() { play('shotgun', { rate: 0.92 + Math.random() * 0.1, vol: 1.15 }); },
+      hit()     { play('hit', { rate: 0.9 + Math.random() * 0.25 }); },
+      dry()     { play('click', { rate: 0.8, vol: 0.4 }); },
+      hurt()    { play('hurt', { vol: 1 }); },
+      kill()    { play('kill', { rate: 0.85 + Math.random() * 0.3 }); },
+      step()    { play('step', { rate: 0.92 + Math.random() * 0.2, vol: 0.5 }); },
+      pickup()  { play('pickup', { vol: 0.9 }); },
+      // МОЩНЫЙ «боевой удар» вместо пиксельного джингла (синтез — всегда звучит одинаково)
+      wave() {
+        tone(55, 0.8, 'triangle', 0.55, 28);
+        noiseBurst(0.5, 'lowpass', 600, 0.5, 120);
+        setTimeout(() => { tone(110, 0.5, 'triangle', 0.42, 55); noiseBurst(0.35, 'lowpass', 900, 0.4, 200); }, 200);
+        setTimeout(() => tone(220, 0.45, 'sawtooth', 0.18, 110), 340);
+      },
+      reload()  {
+        play('reload1');
+        setTimeout(() => play('reload2'), 160);
+        setTimeout(() => play('reload3'), 340);
+      },
+      switch_() { play('click', { vol: 0.7 }); },
+      minigun() { play('rifle', { rate: 1.6 + Math.random() * 0.4, vol: 0.65 }); },
+      boom()    { play('kill', { rate: 0.45, vol: 1.35 }); },
+      // раздражающий «бииип» моноколесника (синтез — всегда бесит одинаково 😏)
+      beep() {
+        tone(900, 0.08, 'square', 0.2);
+        setTimeout(() => tone(900, 0.08, 'square', 0.2), 130);
+      },
+      // свист метательного колеса (низкий завывающий звук)
+      wheel() { play('rifle', { rate: 0.38 + Math.random() * 0.1, vol: 0.5 }); },
+
+      // ---------- ГОЛОСА МОНСТРОВ ----------
+      // мужские выкрики с пониженным тоном звучат как злобный рык
+      monsterCry() {
+        const n = 1 + Math.floor(Math.random() * 10);
+        const loud = Math.random() < 0.25; // иногда крик погромче
+        play('v' + n, { rate: 0.55 + Math.random() * 0.25, vol: loud ? 0.9 : 0.55 });
+      },
+      monsterDeath() {
+        const n = 1 + Math.floor(Math.random() * 10);
+        play('v' + n, { rate: 0.5 + Math.random() * 0.2, vol: 0.5 });
+      },
+      monsterHurt() {
+        const n = 1 + Math.floor(Math.random() * 10);
+        play('v' + n, { rate: 1.15 + Math.random() * 0.2, vol: 0.35 });
+      },
+    };
+
+    // ------------------------------------------------------------
+    // ВРАГИ
+    // ------------------------------------------------------------
+    function buildEnemyMesh(type) {
+      const t = ENEMY_TYPES[type];
+      const mat = new THREE.MeshLambertMaterial({ color: t.color });
+      const dark = new THREE.MeshLambertMaterial({ color: 0x222222 });
+      const boneMat = new THREE.MeshLambertMaterial({ color: 0xe8dcc0 });
+      const redEye = new THREE.MeshLambertMaterial({ color: 0xff2222, emissive: 0x660000 });
+      const g = new THREE.Group();
+      g.userData.mats = [mat, dark, boneMat];
+      // каждый кусочек врага отбрасывает тень
+      const sh = (m) => { m.castShadow = true; return m; };
+
+      if (type === 'flyer') {
+        // центр тела Летуна — в начале координат группы (высота задаётся в update)
+        const body = sh(new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), mat));
+        const eye = sh(new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 6), redEye));
+        eye.position.set(0, 0.08, 0.4);
+        const beak = sh(new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.28, 6), boneMat));
+        beak.rotation.x = Math.PI / 2;
+        beak.position.set(0, 0.02, 0.62);
+        const wingL = sh(new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.05, 0.6), mat));
+        wingL.position.set(-0.82, 0.02, 0);
+        wingL.rotation.z = 0.3;
+        const wingR = wingL.clone();
+        wingR.position.x = 0.82;
+        wingR.rotation.z = -0.3;
+        const tail = sh(new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.5, 6), mat));
+        tail.position.set(0, -0.1, -0.5);
+        tail.rotation.x = Math.PI / 2;
+        g.add(body, eye, beak, wingL, wingR, tail);
+        g.userData.head = eye;
+        g.userData.centerLocal = new THREE.Vector3(0, 0, 0);
+        g.userData.wings = [wingL, wingR];
+      } else if (type === 'monowheel') {
+        // МОНОКОЛЕСНИК: большое колесо + злой всадник сверху (таранит и бибикает!)
+        const wheel = sh(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.26, 14), dark));
+        wheel.rotation.z = Math.PI / 2; // ось колеса — вдоль X, катится вперёд
+        wheel.position.y = 0.5;
+        const rim = sh(new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.07, 8, 22), mat));
+        rim.rotation.y = Math.PI / 2;
+        rim.position.y = 0.5;
+        const spoke1 = sh(new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.05, 0.05), mat));
+        spoke1.position.y = 0.5;
+        const spoke2 = spoke1.clone();
+        spoke2.rotation.x = Math.PI / 2;
+        // злой всадник
+        const rider = sh(new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.5, 0.3), mat));
+        rider.position.y = 1.05;
+        const rHead = sh(new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), mat));
+        rHead.position.set(0, 1.45, 0.05);
+        const rEyeL = sh(new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 6), redEye));
+        rEyeL.position.set(-0.07, 1.48, 0.2);
+        const rEyeR = rEyeL.clone();
+        rEyeR.position.x = 0.07;
+        // рожок-сигнал вместо руля — как у настоящего моноколесника!
+        const rHorn = sh(new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.32, 6), boneMat));
+        rHorn.rotation.z = Math.PI / 2;
+        rHorn.position.set(0, 1.62, 0.1);
+        g.add(wheel, rim, spoke1, spoke2, rider, rHead, rEyeL, rEyeR, rHorn);
+        g.userData.head = rHead;
+        g.userData.centerLocal = new THREE.Vector3(0, 1.0, 0); // центр — всадник
+        g.userData.wheel = wheel;
+      } else {
+        const big = type === 'charger';
+        const s = big ? 1.3 : 1;
+        const body = sh(new THREE.Mesh(new THREE.BoxGeometry(0.7 * s, 0.8 * s, 0.5 * s), mat));
+        body.position.y = 0.9 * s;
+        const head = sh(new THREE.Mesh(new THREE.SphereGeometry(0.26 * s, 12, 10), mat));
+        head.position.set(0, 1.55 * s, 0.12 * s);
+        const eyeL = sh(new THREE.Mesh(new THREE.SphereGeometry(0.05 * s, 6, 6), redEye));
+        eyeL.position.set(-0.12 * s, 1.6 * s, 0.34 * s);
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.12 * s;
+        const armL = sh(new THREE.Mesh(new THREE.BoxGeometry(0.14 * s, 0.14 * s, 0.7 * s), mat));
+        armL.position.set(-0.45 * s, 1.1 * s, 0.05 * s);
+        armL.rotation.z = 0.5;
+        const armR = armL.clone();
+        armR.position.x = 0.45 * s;
+        armR.rotation.z = -0.5;
+        // клыки
+        const fang1 = sh(new THREE.Mesh(new THREE.ConeGeometry(0.05 * s, 0.2 * s, 6), boneMat));
+        fang1.position.set(-0.08 * s, 1.42 * s, 0.3 * s);
+        fang1.rotation.x = Math.PI * 0.55;
+        const fang2 = fang1.clone();
+        fang2.position.x = 0.08 * s;
+        g.add(body, head, eyeL, eyeR, armL, armR, fang1, fang2);
+        g.userData.head = head;
+        g.userData.centerLocal = new THREE.Vector3(0, 0.95 * s, 0); // центр тела (грудь)
+        if (big) {
+          // большие рога Быка
+          const horn1 = sh(new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.6, 6), boneMat));
+          horn1.position.set(-0.22, 2.0, 0.3);
+          horn1.rotation.set(-0.9, 0, 0.55);
+          const horn2 = horn1.clone();
+          horn2.position.x = 0.22;
+          horn2.rotation.z = -0.55;
+          g.add(horn1, horn2);
+        }
+        if (type === 'kamikaze') {
+          // шипы на спине — знак опасности
+          for (let i = 0; i < 3; i++) {
+            const spike = sh(new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.3, 5), boneMat));
+            spike.position.set((i - 1) * 0.22, 1.15, -0.28);
+            spike.rotation.x = Math.PI * 0.25;
+            g.add(spike);
+          }
+          // мигающий «детонатор»
+          const det = sh(new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 6), redEye));
+          det.position.set(0, 1.85, 0.1);
+          g.add(det);
+        }
+        if (type === 'spitter') {
+          // большая «плевательная» голова и горб
+          const hump = sh(new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), mat));
+          hump.position.set(0, 1.35, -0.15);
+          hump.scale.set(1, 0.85, 1.2);
+          const jaw = sh(new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.4, 6), boneMat));
+          jaw.rotation.x = Math.PI / 2;
+          jaw.position.set(0, 1.55, 0.5);
+          const spitEye = sh(new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), redEye));
+          spitEye.position.set(0, 1.65, 0.42);
+          g.add(hump, jaw, spitEye);
+        }
+        if (type === 'boss') {
+          // корона из шипов — Владыка пустыни
+          for (let i = 0; i < 5; i++) {
+            const crown = sh(new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.4, 5), boneMat));
+            const a = (i / 5) * Math.PI * 2;
+            crown.position.set(Math.cos(a) * 0.24, 2.0, Math.sin(a) * 0.24);
+            crown.rotation.x = Math.cos(a) * 0.5;
+            crown.rotation.z = -Math.sin(a) * 0.5;
+            g.add(crown);
+          }
+          const crownEye = sh(new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), redEye));
+          crownEye.position.set(0, 2.1, 0.28);
+          g.add(crownEye);
+        }
+      }
+      g.userData.type = type;
+      return g;
+    }
+
+    function shortAngle(a, b) {
+      let d = b - a;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      return d;
+    }
+
+    class Enemy {
+      constructor(type, pos, hpMult = 1) {
+        this.type = type;
+        const t = ENEMY_TYPES[type];
+        this.maxHp = Math.round(t.hp * hpMult);
+        this.hp = this.maxHp;
+        this.speed = t.speed * (0.85 + Math.random() * 0.3);
+        this.damage = t.damage;
+        this.radius = t.radius;
+        this.group = buildEnemyMesh(type);
+        this.group.position.copy(pos);
+        scene.add(this.group);
+        this.centerLocal = this.group.userData.centerLocal;
+        this.yaw = Math.random() * Math.PI * 2;
+        this.seed = Math.random() * 10;
+        // лёгкая разница в оттенке у каждого врага
+        const shade = (Math.random() - 0.5) * 0.08;
+        for (const m of this.group.userData.mats) m.color.offsetHSL(0, 0, shade);
+        this.dustTimer = 0;
+        this.dead = false;
+        this.deathT = 0;
+        this.lastHit = 0;
+        this.hitFlash = 0;
+        this.spitTimer = 1.5 + Math.random();
+        this.beepT = 1 + Math.random() * 2; // когда моноколесник «бибикнет»
+        this.wheelHitT = 0; // кулдаун попаданий метательного колеса
+        // ---------- УМНЫЙ ИИ ----------
+        this.flankSign = Math.random() < 0.5 ? -1 : 1; // с какой стороны обходит игрока
+        this.strafe = 0; this.strafeT = 0;             // уклонение от прицела
+        this.strafeCd = 1.2 + Math.random() * 2;       // таймер регулярных манёвров в бою
+        this.stuckT = 0;                               // анти-застревание
+        this.chargeCd = 2 + Math.random() * 2;         // перезарядка рывка Быка
+        this.charging = false; this.chargeT = 0;
+        if (type === 'boss') {
+          // босс больше по размеру и светится
+          this.group.scale.setScalar(1.9);
+          this.radius *= 1.9;
+          dom.bossWrap.classList.remove('hidden');
+          dom.bossName.textContent = t.name;
+        }
+      }
+
+      update(dt, t) {
+        if (this.dead) {
+          // быстрая анимация смерти: тело падает, «куски» разлетаются отдельно
+          this.deathT += dt;
+          this.group.rotation.x = Math.min(this.deathT * 3.4, Math.PI / 2) * 0.85;
+          this.group.position.y -= dt * 2.2;
+          return this.deathT > 0.9;
+        }
+
+        const p = player.pos;
+        const dir = new THREE.Vector3().subVectors(p, this.group.position);
+        if (this.type !== 'flyer') dir.y = 0;
+        const dist = dir.length();
+        dir.normalize();
+
+        // КАМИКАДЗЕ: бежит на игрока и взрывается вплотную
+        if (this.type === 'kamikaze') {
+          if (dist < 1.5 && t > this.lastHit + 0.9) {
+            this.lastHit = t;
+            this.explode();
+            return false;
+          }
+        }
+
+        // ---------- УМНЫЙ ИИ: фланги, обход стен, уклонение от прицела ----------
+        // ЛЕТУН: летит по прямой над стенами (он сверху — стены ему не помеха)
+        if (this.type === 'flyer') {
+          this.group.position.addScaledVector(dir, this.speed * dt);
+          this.group.position.y = 3.4 + Math.sin(t * 2.2 + this.seed) * 0.4;
+          const flap = Math.sin(t * 14 + this.seed) * 0.35;
+          const w = this.group.userData.wings;
+          w[0].rotation.z = flap;
+          w[1].rotation.z = -flap;
+          const targetYawF = Math.atan2(dir.x, dir.z);
+          this.yaw += shortAngle(this.yaw, targetYawF) * Math.min(1, 8 * dt);
+          this.group.rotation.y = this.yaw;
+        } else {
+          let moveDir = dir.clone();
+          let speedNow = this.speed;
+
+          // ФЛАНГ: каждый враг подходит со своей стороны — толпа окружает игрока
+          if (dist > 1.8 && this.type !== 'boss') {
+            const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+            moveDir.addScaledVector(perp, this.flankSign * 0.4);
+          }
+
+          // КАМИКАДЗЕ: бешеная скорость и зигзаг — в него сложно попасть!
+          if (this.type === 'kamikaze') {
+            speedNow *= 1.35;
+            const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+            moveDir.addScaledVector(perp, Math.sin(t * 9 + this.seed) * 0.9);
+          }
+
+          // БЫК: замечает игрока на дистанции и МЧИТСЯ на него по прямой
+          if (this.type === 'charger') {
+            if (this.charging) {
+              this.chargeT -= dt;
+              if (this.chargeT <= 0) { this.charging = false; this.chargeCd = 2.2 + Math.random() * 1.6; }
+              moveDir.copy(dir); // рывок — точно в игрока
+              speedNow *= 2.8;
+            } else {
+              this.chargeCd -= dt;
+              if (dist > 7 && dist < 32 && this.chargeCd <= 0) {
+                this.charging = true; this.chargeT = 0.95;
+                if (cryBudget <= 0) { cryBudget = 3; sounds.monsterCry(); } // боевой крик перед рывком!
+              }
+            }
+          }
+
+          // МОНОКОЛЕСНИК: кружит на скорости и ТАРАНИТ рывками — и вечно бибикает!
+          if (this.type === 'monowheel') {
+            this.beepT -= dt;
+            if (this.beepT <= 0) {
+              this.beepT = 1.8 + Math.random() * 2.4;
+              if (beepBudget <= 0) { beepBudget = 0.65; sounds.beep(); }
+            }
+            if (this.charging) {
+              this.chargeT -= dt;
+              if (this.chargeT <= 0) { this.charging = false; this.chargeCd = 1.3 + Math.random() * 1.2; }
+              moveDir.copy(dir); // ТАРАН — точно в игрока
+              speedNow *= 2.6;
+            } else {
+              this.chargeCd -= dt;
+              if (dist > 4 && dist < 30 && this.chargeCd <= 0) {
+                this.charging = true; this.chargeT = 0.7;
+                if (beepBudget <= 0) { beepBudget = 0.65; sounds.beep(); } // сигнал перед тараном!
+              }
+              // кружит вокруг игрока (сильный фланг) — готовится к тарану
+              if (dist < 22) {
+                const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+                moveDir.addScaledVector(perp, this.flankSign * 1.5);
+              }
+            }
+            // колесо крутится — он же ЕДЕТ!
+            const wl = this.group.userData.wheel;
+            if (wl) wl.rotation.x += dt * 13;
+          }
+
+          // ПЛЕВУН: держит дистанцию и плюётся огненными шарами (см. ниже — поворот на игрока)
+          if (this.type === 'spitter') {
+            this.spitTimer -= dt;
+            if (dist > 5 && dist < 55 && this.spitTimer <= 0) {
+              this.spitTimer = 2.6 + Math.random() * 1.2;
+              this.spit();
+            }
+            if (dist < 10.5) {
+              moveDir.negate(); // слишком близко — отходит
+            } else if (dist > 15.5) {
+              // подходит ближе — направление к игроку уже в moveDir
+            } else {
+              // на своей дистанции: убираем движение К игроку, оставляем уклонение вбок
+              moveDir.addScaledVector(dir, -moveDir.dot(dir));
+            }
+          }
+
+          // УКЛОНЕНИЕ: враги ПОСТОЯННО манёврируют в бою (рывки вбок каждые 1-3 сек),
+          // а когда игрок целится прямо во врага — мгновенный резкий увороот
+          if (this.type !== 'boss') {
+            if (this.strafeT <= 0) {
+              let want = false;
+              if (dist < 26) {
+                this.strafeCd -= dt;
+                if (this.strafeCd <= 0) { want = true; this.strafeCd = 1.1 + Math.random() * 1.8; }
+              }
+              if (!want && dist < 36) {
+                // игрок целится прямо в этого врага? (fwd = направление взгляда)
+                const fwdX = -Math.sin(player.yaw), fwdZ = -Math.cos(player.yaw);
+                if (fwdX * dir.x + fwdZ * dir.z > 0.7 && Math.random() < dt * 7) want = true;
+              }
+              if (want) {
+                this.strafe = this.flankSign * (2 + Math.random() * 1.8);
+                this.strafeT = 0.5 + Math.random() * 0.6;
+              }
+            }
+            if (this.strafeT > 0) {
+              this.strafeT -= dt;
+              const perp = new THREE.Vector3(-moveDir.z, 0, moveDir.x);
+              moveDir.addScaledVector(perp, this.strafe);
+              speedNow *= 2.1; // РЫВОК! отчётливый бросок вбок
+            }
+          }
+
+          if (moveDir.lengthSq() > 0.0001) moveDir.normalize();
+          else moveDir.set(0, 0, 0);
+
+          // движение с обходом препятствий (у Плевуна moveDir может быть нулевым — стоит)
+          if (dist > 1.1 || this.type === 'spitter') {
+            if (moveWithSteering(this, moveDir, speedNow, dt)) {
+              // БОСС: сносит стены и скалы на своём пути!
+              if (this.type === 'boss') smashObstacles(this.group.position, this.radius * 0.95);
+              // поворот: Плевун всегда целится в игрока, остальные — по направлению движения
+              const turnDir = this.type === 'spitter' ? dir : moveDir;
+              const targetYaw = Math.atan2(turnDir.x, turnDir.z);
+              this.yaw += shortAngle(this.yaw, targetYaw) * Math.min(1, 8 * dt);
+              this.group.rotation.y = this.yaw;
+              // пыль из-под ног бегущих врагов
+              if (this.type !== 'spitter') {
+                this.dustTimer -= dt;
+                if (this.dustTimer <= 0) {
+                  this.dustTimer = 0.3;
+                  const fp = this.group.position.clone();
+                  fp.y = 0.08;
+                  spawnDust(fp, 1);
+                }
+              }
+            }
+          }
+          this.group.position.y = Math.sin(t * 7 + this.seed) * 0.05;
+        }
+
+        // атака при контакте — горизонтальное расстояние до центра тела
+        const centerWorld = this.group.localToWorld(this.centerLocal.clone());
+        const horiz = Math.hypot(centerWorld.x - p.x, centerWorld.z - p.z);
+        if (horiz < this.radius + 0.9 && t > this.lastHit + 0.9) {
+          this.lastHit = t;
+          damagePlayer(this.damage);
+          // яростный рык при ударе!
+          if (cryBudget <= 0) {
+            cryBudget = 2.2;
+            sounds.monsterCry();
+          }
+          if (this.type === 'boss') playRoar();
+        }
+
+        // красная вспышка при попадании
+        const e = this.hitFlash > 0 ? 0xaa0000 : 0x000000;
+        for (const m of this.group.userData.mats) m.emissive.setHex(e);
+        if (this.hitFlash > 0) this.hitFlash -= dt;
+        return false;
+      }
+
+      // КАМИКАДЗЕ: взрыв — урон игроку и гибель самого врага
+      explode() {
+        const pos = this.group.position.clone();
+        pos.y = 1;
+        this.dead = true;
+        this.deathT = 2; // мгновенно исчезнуть
+        damagePlayer(this.damage);
+        sounds.shotgun();
+        spawnGibs(pos, 'charger');
+        spawnDust(pos, 10);
+        spawnBlood(pos, 8);
+        camShake = Math.max(camShake, 0.45);
+        // взрыв камикадзе поджигает бочки рядом — цепная реакция!
+        for (let j = barrels.length - 1; j >= 0; j--) {
+          const b = barrels[j];
+          if (b.mesh.position.distanceTo(pos) < 4.5) explodeBarrel(j);
+        }
+      }
+
+      // ПЛЕВУН: огненный шар летит в игрока
+      spit() {
+        const origin = this.group.position.clone();
+        origin.y = 1.4;
+        const target = player.pos.clone();
+        const dir = new THREE.Vector3().subVectors(target, origin).normalize();
+        const f = {
+          pos: origin,
+          vel: dir.multiplyScalar(16),
+          life: 3.5,
+        };
+        spawnFireballMesh(f);
+        fireballs.push(f);
+      }
+
+      takeDamage(dmg, headshot) {
+        if (this.dead) return;
+        this.hp -= dmg;
+        this.hitFlash = 0.12;
+        // боль: монстр взвизгивает, когда его ранят
+        if (cryBudget <= 0 && Math.random() < 0.3) {
+          cryBudget = 1.8;
+          sounds.monsterHurt();
+        }
+        if (this.type === 'boss') updateBossBar();
+        if (this.hp <= 0) {
+          this.dead = true;
+          this.deathT = 0;
+          const t = ENEMY_TYPES[this.type];
+          // комбо: убийства подряд (без паузы 2.5 сек) дают множитель очков
+          if (comboTimer > 0) combo = Math.min(combo + 1, 9); else combo = 1;
+          comboTimer = 2.5;
+          const mult = combo >= 2 ? combo : 1;
+          const pts = (t.score + (headshot ? 5 : 0)) * mult;
+          score += pts;
+          kills++;
+          coins += t.coins; // монеты за убийство!
+          saveVal('gd_coins', coins);
+          sounds.kill();
+          // последний крик умирающего монстра
+          if (Math.random() < 0.6) sounds.monsterDeath();
+          if (mult >= 2) showCombo(mult);
+          const headPos = this.group.userData.head.getWorldPosition(new THREE.Vector3());
+          spawnBlood(headPos, 10);
+          spawnGibs(this.group.position, this.type); // «взрыв на куски» в духе Serious Sam
+          spawnDust(this.group.position, 6);
+          if (headshot) showMsg('ХЕДШОТ! +' + pts, 0.9);
+          if (Math.random() < 0.14) spawnPickup(this.group.position);
+          // босс повержен — показать полосу, выдать награду, музыка обратно в бой
+          if (this.type === 'boss') {
+            dom.bossWrap.classList.add('hidden');
+            showMsg('💀 ' + LEVELS[levelIndex].bossName + ' ПОВЕРЖЕН! +' + pts, 3);
+            if (state === 'playing') setMusic('battle');
+          }
+          // моноколесник сдулся — фирменная надпись для друзей-моноколесников 😏
+          if (this.type === 'monowheel') {
+            showMsg('🛞 Колесо сдулось. Как и его настроение', 1.8);
+          }
+        }
+      }
+    }
+
+    // ------------------------------------------------------------
+    // ВОЛНЫ
+    // ------------------------------------------------------------
+    // Множитель здоровья врагов: с каждой волной они становятся живучее
+    // сложность растёт с волной и с номером уровня
+    function hpScale(waveN) { return (1 + (waveN - 1) * 0.18) * (1 + levelIndex * 0.35); }
+
+    // Какой тип врага появляется на волне n (чем дальше — тем злее)
+    function pickEnemyType(n) {
+      const roll = Math.random();
+      if (n >= 2 && roll < 0.18) return 'charger';
+      if (n >= 2 && roll >= 0.18 && roll < 0.3) return 'monowheel'; // Моноколесник — со 2-й волны
+      if (n >= 3 && roll < 0.44) return 'flyer';
+      if (n >= 2 && roll >= 0.44 && roll < 0.58) return 'kamikaze';
+      if (n >= 3 && roll >= 0.58 && roll < 0.74) return 'spitter';
+      if (n >= 4 && roll >= 0.9) return 'kamikaze';
+      return 'walker';
+    }
+
+    function startWave(n) {
+      wave = n;
+      const total = Math.min(6 + n * 4, 90);
+      spawnQueue = [];
+      // ОГРОМНАЯ ТОЛПА СРАЗУ: до 30 врагов выбегают одновременно (как в Serious Sam!),
+      // остальные подтягиваются с задержкой
+      const burst = Math.min(30, Math.round(total * 0.7));
+      let delay = 0;
+      for (let i = 0; i < total; i++) {
+        const type = pickEnemyType(n);
+        let t;
+        if (i < burst) t = Math.random() * 0.9; // толпа рвётся сразу
+        else { delay += 0.25 + Math.random() * 0.6; t = delay; }
+        spawnQueue.push({ type, t });
+      }
+      // БОСС — на последней волне уровня, приходит последним
+      const isBoss = n === LEVELS[levelIndex].waves;
+      if (isBoss) spawnQueue.push({ type: 'boss', t: delay + 2.5 });
+      waveState = 'spawning';
+      if (isBoss) {
+        showMsg('ВОЛНА ' + n + ' — ⚠ ' + LEVELS[levelIndex].bossName + ' ⚠', 3.2);
+        sounds.wave();
+        setTimeout(() => sounds.wave(), 900);
+        // сюжетная шутка босса (потом — рёв)
+        setTimeout(() => { if (state === 'playing') showMsg(STORY.bossIntro[levelIndex], 3); }, 1500);
+        setTimeout(() => { if (state === 'playing') playRoar(); }, 3000); // рёв босса
+      } else {
+        showMsg('ВОЛНА ' + n, 2.5);
+        sounds.wave();
+        // боевой клич толпы при старте волны
+        setTimeout(() => { if (state === 'playing') sounds.monsterCry(); }, 600);
+        setTimeout(() => { if (state === 'playing') sounds.monsterCry(); }, 1300);
+      }
+    }
+
+    let cryBudget = 0;  // чтобы монстры не орали слишком часто
+    let beepBudget = 0; // и чтобы моноколесники не бибикали хором
+    function spawnEnemy(type) {
+      const L = LEVELS[levelIndex];
+      let pos;
+      if (L.corridor) {
+        if (type === 'boss') {
+          // босс встаёт у финишных врат, загораживая выход
+          pos = new THREE.Vector3(0, 0, L.corrFinishZ - 5);
+        } else {
+          // орда вываливается ВПЕРЕДИ по коридору (а не откуда-то сбоку)
+          const zz = Math.max(player.pos.z - (26 + Math.random() * 24), L.corrFinishZ + 12);
+          pos = new THREE.Vector3((Math.random() * 2 - 1) * (L.corrW - 4), 0, zz);
+        }
+      } else {
+        const a = Math.random() * Math.PI * 2;
+        const r = 46 + Math.random() * 10;
+        pos = new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+      }
+      // в коридоре волны растут бесконечно — ограничиваем HP, иначе станет невыносимо
+      const hpMul = L.corridor ? Math.min(wave, 4) : wave;
+      enemies.push(new Enemy(type, pos, hpScale(hpMul)));
+      // боевой клич: новые монстры рычат, появляясь (не слишком часто)
+      if (cryBudget <= 0 && type !== 'boss') {
+        cryBudget = 3.5;
+        sounds.monsterCry();
+      }
+      if (type === 'boss') {
+        cryBudget = 8;
+        playRoar(); // эпичный рёв босса!
+        dom.bossName.textContent = LEVELS[levelIndex].bossName; // босс уровня
+        // босс пришёл — включается его тяжёлая тема!
+        if (state === 'playing') setMusic('boss');
+      }
+    }
+
+    // ---------- РЕЖИМ «ПРОРЫВ»: длинный коридор, орды хреначат, ты бежишь к финишу ----------
+    function startCorridor() {
+      wave = 1;
+      spawnQueue = [];
+      corrHordeT = 1.4; // первая орда почти сразу
+      corrFinal = false;
+      corrGates = 0;
+      waveState = 'spawning';
+      const L = LEVELS[levelIndex];
+      showMsg('🔥 ПРОРЫВ! Финиш в ' + Math.round(L.corrStartZ - L.corrFinishZ) + ' метрах — БЕГИ!', 3.4);
+      sounds.wave();
+      setTimeout(() => { if (state === 'playing') sounds.monsterCry(); }, 600);
+    }
+
+    // Орда из N врагов — вываливается впереди по коридору
+    function spawnHorde(extra) {
+      wave++;
+      const n = 12 + Math.floor(wave * 2.4) + (extra || 0);
+      spawnQueue = [];
+      for (let i = 0; i < n; i++) spawnQueue.push({ type: pickEnemyType(Math.min(wave, 6)), t: Math.random() * 1.4 });
+      waveState = 'spawning';
+    }
+
+    function updateCorridor(dt) {
+      const L = LEVELS[levelIndex];
+      const total = L.corrStartZ - L.corrFinishZ;
+      const prog = Math.max(0, Math.min(1, (L.corrStartZ - player.pos.z) / total));
+
+      if (!corrFinal) {
+        // орды валят навстречу почти непрерывно
+        corrHordeT -= dt;
+        if (corrHordeT <= 0) {
+          corrHordeT = 1.7 + Math.random() * 1.7;
+          spawnHorde();
+          sounds.wave();
+          setTimeout(() => { if (state === 'playing') sounds.monsterCry(); }, 350);
+        }
+        // ВРАТА: каждые 25% пути — толпа + надпись (первое — на 25%)
+        const gateIdx = Math.floor(prog * 4);
+        if (gateIdx > corrGates) {
+          corrGates = gateIdx;
+          showMsg('🏛 ВРАТА ' + gateIdx + ' / 4!', 2.2);
+          sounds.wave();
+          spawnHorde(6);
+        }
+        // ФИНИШ: пересёк линию — начинается последний рубеж с боссом
+        if (player.pos.z <= L.corrFinishZ) {
+          corrFinal = true;
+          spawnQueue = [];
+          for (let i = 0; i < 16; i++) spawnQueue.push({ type: pickEnemyType(6), t: i * 0.3 });
+          spawnQueue.push({ type: 'boss', t: 2.2 });
+          waveState = 'spawning';
+          showMsg('⚠ ' + L.bossName + ' — ПОСЛЕДНИЙ РУБЕЖ! ⚠', 3.2);
+          sounds.wave();
+          setTimeout(() => { if (state === 'playing') showMsg(STORY.bossIntro[levelIndex], 3); }, 1600);
+          setTimeout(() => { if (state === 'playing') playRoar(); }, 2800);
+        }
+      }
+
+      // раздаём очередь спавна
+      if (spawnQueue.length) {
+        spawnQueue[0].t -= dt;
+        while (spawnQueue.length && spawnQueue[0].t <= 0) spawnEnemy(spawnQueue.shift().type);
+      }
+
+      // финал зачищен — коридор пройден!
+      if (corrFinal && !spawnQueue.length && !enemies.some((e) => !e.dead)) {
+        levelComplete();
+        return;
+      }
+
+      // врагов, отставших далеко позади, убираем — не заставляем бегать назад
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (e.dead || e.type === 'boss') continue;
+        if (e.group.position.z - player.pos.z > 65) {
+          disposeGroup(e.group);
+          scene.remove(e.group);
+          enemies.splice(i, 1);
+        }
+      }
+    }
+
+    function updateWaves(dt) {
+      // в коридоре своя логика волн — орды по пути, а не круги вокруг игрока
+      if (LEVELS[levelIndex].corridor) { updateCorridor(dt); return; }
+      if (waveState === 'spawning') {
+        if (spawnQueue.length) {
+          spawnQueue[0].t -= dt;
+          while (spawnQueue.length && spawnQueue[0].t <= 0) {
+            spawnEnemy(spawnQueue.shift().type);
+          }
+        }
+        const alive = enemies.some((e) => !e.dead);
+        if (!spawnQueue.length && !alive) {
+          const bonus = 50 + wave * 10;
+          score += bonus;
+          showMsg('Волна ' + wave + ' пройдена! +' + bonus, 2.5);
+          // последняя волна уровня → победа уровня!
+          if (wave >= LEVELS[levelIndex].waves) {
+            levelComplete();
+            return;
+          }
+          waveState = 'pause';
+          wavePauseTimer = CONFIG.wavePause;
+          sounds.wave();
+        }
+      } else if (waveState === 'pause') {
+        wavePauseTimer -= dt;
+        if (wavePauseTimer <= 0) startWave(wave + 1);
+      }
+    }
+
+    // ------------------------------------------------------------
+    // АПТЕЧКИ
+    // ------------------------------------------------------------
+    const healMat = new THREE.MeshLambertMaterial({ color: 0x3ddc55, emissive: 0x0f5a1a });
+    function spawnPickup(pos) {
+      const g = new THREE.Group();
+      const m1 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.16), healMat);
+      const m2 = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.5, 0.16), healMat);
+      g.add(m1, m2);
+      g.position.copy(pos);
+      g.position.y = 1;
+      scene.add(g);
+      pickups.push(g);
+    }
+    function updatePickups(dt) {
+      for (let i = pickups.length - 1; i >= 0; i--) {
+        const g = pickups[i];
+        g.rotation.y += 2 * dt;
+        g.position.y = 1 + Math.sin(gameTime * 2 + i) * 0.15;
+        if (g.position.distanceTo(player.pos) < 1.4 && player.hp < maxHp()) {
+          player.hp = Math.min(maxHp(), player.hp + 25);
+          scene.remove(g);
+          pickups.splice(i, 1);
+          sounds.pickup();
+          showPickup('♥ +25 ЗДОРОВЬЕ');
+        }
+      }
+    }
+
+    // ------------------------------------------------------------
+    // СТРЕЛЬБА
+    // ------------------------------------------------------------
+    function aimDir() {
+      return new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+    }
+    function spreadDir(base, amount) {
+      const dir = base.clone();
+      const u = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+      dir.addScaledVector(u, amount).normalize();
+      return dir;
+    }
+
+    function fire() {
+      const w = WEAPONS[current];
+      // на моноколесе ракетница запрещена (классика безопасности 😏)
+      if (w.id === 3 && riding) {
+        showPickup('Нельзя стрелять ракетницей на колесе!');
+        sounds.dry();
+        return;
+      }
+      if (w.mag <= 0) {
+        if (w.id === 4) sounds.dry(); // колесо ещё в полёте
+        else if (w.reloadTimer <= 0) startReload();
+        else sounds.dry();
+        return;
+      }
+      if (w.reloadTimer > 0 || w.fireTimer > 0) return;
+      // миниган перегрелся — нужно дать ему остыть
+      if (w.id === 2 && w.heat >= 100) { sounds.dry(); return; }
+      w.mag--;
+      w.fireTimer = w.fireRate;
+      // миниган копит перегрев во время стрельбы
+      if (w.id === 2) w.heat = Math.min(100, w.heat + 3.4);
+      recoilUp = Math.min(0.15, recoilUp + w.recoil);
+      camShake = Math.min(0.35, camShake + (w.id === 1 ? 0.12 : w.id === 3 ? 0.22 : 0.04));
+
+      const gun = allGuns[current];
+      gun.add(flashSprite); // вспышка всегда у дула активного оружия
+      const muzzleWorld = gun.localToWorld(gun.userData.muzzle.clone());
+      // попадания считаем от ГЛАЗ, а не от дула — иначе враги ближе 1 м не пробиваются
+      const eyePos = camera.getWorldPosition(new THREE.Vector3());
+      const base = aimDir();
+
+      // вспышка у дула
+      flashSprite.visible = true;
+      flashLife = 0.05;
+      flashSprite.material.rotation = Math.random() * Math.PI;
+      const fs = 1.6 + Math.random() * 1.4;
+      flashSprite.scale.set(fs, fs, 1);
+      muzzleLight.intensity = 4.5;
+
+      // МЕТАТЕЛЬНОЕ КОЛЕСО: рубит толпу, отскакивает от стен и возвращается!
+      if (w.id === 4) {
+        throwWheel(muzzleWorld, base);
+      } else if (w.id === 3) {
+        // РАКЕТНИЦА: летит снаряд и взрывается по площади!
+        sounds.shotgun();
+        launchRocket(muzzleWorld, base);
+      } else {
+        if (w.id === 1) sounds.shotgun();
+        else if (w.id === 2) sounds.minigun();
+        else sounds.rifle();
+        for (let i = 0; i < w.pellets; i++) {
+          const dir = spreadDir(base, w.spread);
+          const hit = shootRay(eyePos, dir, w.dmg * dmgMult());
+          spawnTracer(muzzleWorld, hit, w.id === 1);
+        }
+      }
+
+      dom.crosshair.classList.remove('fire');
+      void dom.crosshair.offsetWidth; // перезапуск анимации
+      dom.crosshair.classList.add('fire');
+      setTimeout(() => dom.crosshair.classList.remove('fire'), 90);
+    }
+
+    // Проверка попадания: лучом «вручную» по врагам и взрывчаткам
+    function shootRay(origin, dir, dmg) {
+      let best = Infinity, bestEnemy = null, bestHead = false, bestBarrel = null;
+      const tmp = new THREE.Vector3();
+      const hitTmp = new THREE.Vector3();
+      for (const e of enemies) {
+        if (e.dead) continue;
+        // центр тела врага в мировых координатах (не ноги!)
+        const center = e.group.localToWorld(e.centerLocal.clone());
+        tmp.subVectors(center, origin);
+        const t = tmp.dot(dir);
+        if (t < 0 || t > best) continue;
+        hitTmp.copy(origin).addScaledVector(dir, t);
+        // радиус туловища щедрый, чтобы пули на уровне глаз попадали в грудь
+        const bodyR = Math.max(e.radius, 0.85);
+        if (hitTmp.distanceTo(center) <= bodyR) {
+          const headPos = e.group.userData.head.getWorldPosition(new THREE.Vector3());
+          const isHead = hitTmp.distanceTo(headPos) <= e.radius * 0.55;
+          best = t; bestEnemy = e; bestHead = isHead;
+        }
+      }
+      // бочки тоже можно подстрелить: если бочка ближе врага — взрыв по орде!
+      for (const b of barrels) {
+        tmp.subVectors(b.mesh.position, origin);
+        const t = tmp.dot(dir);
+        if (t < 0 || t > best) continue;
+        hitTmp.copy(origin).addScaledVector(dir, t);
+        if (hitTmp.distanceTo(b.mesh.position) <= b.r + 0.35) {
+          best = t; bestEnemy = null; bestHead = false; bestBarrel = b;
+        }
+      }
+      if (bestBarrel) {
+        damageBarrel(bestBarrel, dmg);
+        sounds.hit();
+        const hitPoint = origin.clone().addScaledVector(dir, best);
+        spawnBlood(hitPoint, 2);
+        dom.crosshair.classList.remove('hit');
+        void dom.crosshair.offsetWidth;
+        dom.crosshair.classList.add('hit');
+        setTimeout(() => dom.crosshair.classList.remove('hit'), 110);
+        return hitPoint;
+      }
+      if (bestEnemy) {
+        bestEnemy.takeDamage(dmg * (bestHead ? 2 : 1), bestHead);
+        sounds.hit();
+        const hitPoint = origin.clone().addScaledVector(dir, best);
+        spawnBlood(hitPoint, 4);
+        dom.crosshair.classList.remove('hit');
+        void dom.crosshair.offsetWidth;
+        dom.crosshair.classList.add('hit');
+        setTimeout(() => dom.crosshair.classList.remove('hit'), 110);
+        return hitPoint;
+      }
+      // попадание в землю или просто вдаль
+      if (dir.y < -0.001) {
+        const t = -origin.y / dir.y;
+        if (t > 0) return origin.clone().addScaledVector(dir, t);
+      }
+      return origin.clone().addScaledVector(dir, 130);
+    }
+
+    // ------------------------------------------------------------
+    // ТРАССЕРЫ И КРОВЬ (эффекты)
+    // ------------------------------------------------------------
+    const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffe9a0, transparent: true, opacity: 0.9 });
+    const bloodMat = new THREE.MeshBasicMaterial({ color: 0xbb1e1e });
+    const dustMat = new THREE.MeshBasicMaterial({ color: 0xd9c39a, transparent: true, opacity: 0.55 });
+
+    // «Куски» врагов при смерти (гибсы) — общий материал на тип
+    const gibMaterials = {};
+    for (const key of Object.keys(ENEMY_TYPES)) {
+      gibMaterials[key] = new THREE.MeshBasicMaterial({ color: ENEMY_TYPES[key].color });
+    }
+    let gibs = [];
+    let dust = [];
+    // одна общая геометрия для всех «кусков» (экономия памяти) + без теней
+    const gibGeo = new THREE.BoxGeometry(1, 1, 1);
+    function spawnGibs(pos, type) {
+      const count = type === 'charger' ? 7 : 5;
+      for (let i = 0; i < count; i++) {
+        if (gibs.length > 120) return;
+        const m = new THREE.Mesh(gibGeo, gibMaterials[type]);
+        const s = 0.12 + Math.random() * 0.18;
+        m.scale.set(s, s, s);
+        m.position.copy(pos);
+        m.position.y += 0.6 + Math.random() * 0.6;
+        const v = new THREE.Vector3((Math.random() - 0.5) * 7, 3.5 + Math.random() * 4.5, (Math.random() - 0.5) * 7);
+        const rv = new THREE.Vector3(Math.random() * 12, Math.random() * 12, Math.random() * 12);
+        scene.add(m);
+        gibs.push({ mesh: m, v, rv, life: 1.0 + Math.random() * 0.5 });
+      }
+    }
+    function spawnDust(pos, count) {
+      for (let i = 0; i < count; i++) {
+        if (dust.length > 80) return;
+        const m = new THREE.Mesh(
+          new THREE.BoxGeometry(0.12 + Math.random() * 0.16, 0.12 + Math.random() * 0.16, 0.12 + Math.random() * 0.16),
+          dustMat
+        );
+        m.position.copy(pos);
+        m.position.y = 0.1;
+        const v = new THREE.Vector3((Math.random() - 0.5) * 2, 0.6 + Math.random() * 1.4, (Math.random() - 0.5) * 2);
+        scene.add(m);
+        dust.push({ mesh: m, v, life: 0.5 + Math.random() * 0.5 });
+      }
+    }
+
+    function spawnTracer(from, to, small) {
+      if (tracers.length > 60) return;
+      const len = from.distanceTo(to);
+      if (len < 0.5) return;
+      const size = small ? 0.02 : 0.035;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(size, size, len), tracerMat);
+      m.position.copy(from).add(to).multiplyScalar(0.5);
+      m.lookAt(to);
+      scene.add(m);
+      tracers.push({ mesh: m, life: small ? 0.1 : 0.07 });
+    }
+    function spawnBlood(pos, count) {
+      for (let i = 0; i < count; i++) {
+        if (blood.length > 140) return;
+        const m = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.07), bloodMat);
+        m.position.copy(pos);
+        const v = new THREE.Vector3(
+          (Math.random() - 0.5) * 4, Math.random() * 3 + 1, (Math.random() - 0.5) * 4
+        );
+        scene.add(m);
+        blood.push({ mesh: m, v, life: 0.5 + Math.random() * 0.4 });
+      }
+    }
+    // Полоса здоровья босса
+    function updateBossBar() {
+      const b = enemies.find((e) => e.type === 'boss' && !e.dead);
+      if (!b) { dom.bossWrap.classList.add('hidden'); return; }
+      dom.bossWrap.classList.remove('hidden');
+      dom.bossFill.style.width = Math.max(0, b.hp / b.maxHp * 100) + '%';
+    }
+
+    // Комбо-множитель на экране
+    function showCombo(mult) {
+      dom.comboText.textContent = '⚡ ×' + mult;
+      dom.comboText.classList.remove('hidden');
+      void dom.comboText.offsetWidth; // перезапуск анимации
+      clearTimeout(comboHideT);
+      comboHideT = setTimeout(() => dom.comboText.classList.add('hidden'), 900);
+    }
+
+    // Огненные шары Плевуна
+    function updateFireballs(dt) {
+      for (let i = fireballs.length - 1; i >= 0; i--) {
+        const f = fireballs[i];
+        f.pos.addScaledVector(f.vel, dt);
+        f.life -= dt;
+        // ОГНЕННЫЙ ШАР ПЛЕВУНА ДЕТОНИРУЕТ БОЧКИ — враги сами поджигают арсенал!
+        let hitBarrel = false;
+        for (const b of barrels) {
+          if (b.mesh.position.distanceTo(f.pos) < b.r + 0.35) { hitBarrel = true; break; }
+        }
+        if (hitBarrel) {
+          const fp = f.pos.clone();
+          const bi = barrels.findIndex((b) => b.mesh.position.distanceTo(fp) < b.r + 0.35);
+          if (bi >= 0) explodeBarrel(bi); // БУМ + цепная реакция
+          if (f.mesh) scene.remove(f.mesh);
+          fireballs.splice(i, 1);
+          continue;
+        }
+        const hitPlayer = f.pos.distanceTo(player.pos) < 0.8;
+        if (hitPlayer || f.life <= 0) {
+          const fp = f.pos.clone();
+          spawnDust(fp, 4);
+          spawnBlood(fp, 2);
+          if (hitPlayer) damagePlayer(14);
+          if (f.mesh) scene.remove(f.mesh);
+          fireballs.splice(i, 1);
+          continue;
+        }
+        // огненный след (общие геометрия/материал — не создаём новые каждый кадр)
+        const trail = new THREE.Mesh(trailGeo, trailMat);
+        trail.position.copy(f.pos);
+        scene.add(trail);
+        blood.push({ mesh: trail, v: new THREE.Vector3(), life: 0.3 });
+      }
+    }
+
+    // Рисуем огненные шары (сферы) — общие ресурсы
+    const fireballMat = new THREE.MeshBasicMaterial({ color: 0xff7b22, transparent: true, opacity: 0.95 });
+    const fireballGeo = new THREE.SphereGeometry(0.22, 8, 8);
+    const trailGeo = new THREE.SphereGeometry(0.06, 4, 4);
+    const trailMat = new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.5 });
+    function spawnFireballMesh(f) {
+      const m = new THREE.Mesh(fireballGeo, fireballMat);
+      m.position.copy(f.pos);
+      scene.add(m);
+      f.mesh = m;
+    }
+
+    // ---------- РАКЕТЫ ИГРОКА ----------
+    // Общие ресурсы: материалы и геометрия (одна на все ракеты/взрывы — экономия памяти)
+    const rocketMat = new THREE.MeshLambertMaterial({ color: 0xb8c2a0 });
+    const rocketFireMat = new THREE.MeshBasicMaterial({ color: 0xffa030 });
+    const boomMat = new THREE.MeshBasicMaterial({
+      color: 0xff7b22, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const rocketBodyGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.5, 8);
+    const rocketFireGeo = new THREE.SphereGeometry(0.11, 6, 6);
+    const boomGeo = new THREE.SphereGeometry(1, 10, 8);
+    const boomRingGeo = new THREE.TorusGeometry(1, 0.07, 6, 28); // ударная волна
+    const smokeGeo = new THREE.SphereGeometry(1, 5, 5);
+    const smokeMat = new THREE.MeshBasicMaterial({ color: 0x777066, transparent: true, opacity: 0.4, depthWrite: false });
+    const boomRingMat = new THREE.MeshBasicMaterial({
+      color: 0xffb347, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+
+    // Выбор цели для ракеты: враг в конусе прицела (точный выстрел),
+    // а если в прицеле пусто — просто ближайший живой враг (стрельнул в небо — ракета сама найдёт!)
+    function pickRocketTarget(from, dir) {
+      let cone = null, coneDot = Math.cos(14 * Math.PI / 180);
+      let near = null, nearD = Infinity;
+      for (const e of enemies) {
+        if (e.dead) continue;
+        const dx = e.group.position.x - from.x, dz = e.group.position.z - from.z;
+        const d = Math.hypot(dx, dz);
+        if (d < 95 && d > 0.6) {
+          const ndx = dx / d, ndz = dz / d;
+          const dot = ndx * dir.x + ndz * dir.z;
+          if (dot > coneDot) { coneDot = dot; cone = e; }
+          if (d < nearD) { nearD = d; near = e; }
+        }
+      }
+      return cone || near;
+    }
+
+    function launchRocket(from, dir) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(rocketBodyGeo, rocketMat);
+      body.rotation.x = Math.PI / 2;
+      const fire = new THREE.Mesh(rocketFireGeo, rocketFireMat);
+      fire.position.set(0, 0, 0.34); // огненный хвост
+      g.add(body, fire);
+      g.position.copy(from);
+      scene.add(g);
+      rockets.push({
+        pos: from.clone(), vel: dir.clone().multiplyScalar(32), speed: 32,
+        life: 4.5, mesh: g, target: pickRocketTarget(from, dir), smokeT: 0,
+      });
+    }
+
+    // ---------- МЕТАТЕЛЬНОЕ КОЛЕСО (слот 5, после покупки «Моноколесо») ----------
+    // Летит сквозь толпу, рубит всех на пути, отскакивает от стен и ВОЗВРАЩАЕТСЯ.
+    const throwWheelGeo = new THREE.TorusGeometry(0.38, 0.09, 8, 24);
+    const throwWheelMat = new THREE.MeshLambertMaterial({ color: 0xd9a441, emissive: 0x5a3a08 });
+    let throwWheels = []; // { mesh, pos, vel, dist, returning, bounces }
+    function throwWheel(from, dir) {
+      WEAPONS[4].mag = 0; // пока летит — бросить нельзя
+      const g = new THREE.Mesh(throwWheelGeo, throwWheelMat);
+      g.castShadow = true;
+      g.position.copy(from);
+      scene.add(g);
+      throwWheels.push({
+        mesh: g, pos: from.clone(), vel: dir.clone().multiplyScalar(24),
+        dist: 0, returning: false, bounces: 0,
+      });
+      sounds.wheel();
+    }
+    // Обновление летящих колёс: движение, отскоки, рубка толпы, возврат к игроку
+    function updateThrowWheels(dt) {
+      const tmp = new THREE.Vector3();
+      for (let i = throwWheels.length - 1; i >= 0; i--) {
+        const tw = throwWheels[i];
+        tw.dist += tw.vel.length() * dt;
+        tw.mesh.rotation.x += dt * 22; // колесо крутится в полёте
+        tw.mesh.rotation.z += dt * 7;
+        // после пролёта (или 4 отскоков) — летит НАЗАД к игроку
+        if (!tw.returning && (tw.dist > 40 || tw.bounces >= 4)) tw.returning = true;
+        if (tw.returning) {
+          tmp.subVectors(player.pos, tw.pos);
+          tmp.y = 0;
+          const bd = tmp.length();
+          if (bd < 1.6) {
+            // ПОЙМАЛ колесо — снова можно бросать!
+            scene.remove(tw.mesh);
+            throwWheels.splice(i, 1);
+            WEAPONS[4].mag = 1;
+            if (current === 4) sounds.pickup();
+            continue;
+          }
+          tmp.normalize();
+          tw.vel.copy(tmp).multiplyScalar(26);
+        }
+        // движение
+        tw.pos.addScaledVector(tw.vel, dt);
+        // отскок от препятствий (стены, скалы, колонны)
+        for (const o of obstacles) {
+          let nx = 0, nz = 0, hit = false;
+          if (o.r) {
+            const dx = tw.pos.x - o.x, dz = tw.pos.z - o.z;
+            const minD = o.r + 0.15;
+            const d2 = dx * dx + dz * dz;
+            if (d2 < minD * minD && d2 > 0.0001) {
+              const d = Math.sqrt(d2);
+              nx = dx / d; nz = dz / d;
+              tw.pos.x = o.x + nx * minD;
+              tw.pos.z = o.z + nz * minD;
+              hit = true;
+            }
+          } else {
+            const cx = Math.max(o.minX, Math.min(tw.pos.x, o.maxX));
+            const cz = Math.max(o.minZ, Math.min(tw.pos.z, o.maxZ));
+            const dx = tw.pos.x - cx, dz = tw.pos.z - cz;
+            const d2 = dx * dx + dz * dz;
+            if (d2 < 0.25 && d2 > 0.0001) {
+              const d = Math.sqrt(d2);
+              nx = dx / d; nz = dz / d;
+              tw.pos.x = cx + nx * 0.5;
+              tw.pos.z = cz + nz * 0.5;
+              hit = true;
+            }
+          }
+          if (hit) {
+            const dot = tw.vel.x * nx + tw.vel.z * nz;
+            tw.vel.x -= 2 * dot * nx;
+            tw.vel.z -= 2 * dot * nz;
+            tw.bounces++;
+            sounds.hit();
+            break;
+          }
+        }
+        // рубит ВСЕХ врагов на пути (не только ближайшего!)
+        for (const e of enemies) {
+          if (e.dead || e.type === 'boss') continue;
+          if (e.group.position.distanceTo(tw.pos) < e.radius + 0.6 && gameTime > e.wheelHitT) {
+            e.wheelHitT = gameTime + 0.35; // кулдаун на одного врага
+            e.takeDamage(WEAPONS[4].dmg * dmgMult(), false);
+            spawnBlood(e.group.position, 3);
+            tw.bounces++; // каждый срубленный — колесо быстрее возвращается
+          }
+        }
+        tw.mesh.position.copy(tw.pos);
+        tw.mesh.lookAt(tw.pos.clone().add(tw.vel));
+      }
+    }
+
+    // Взрыв: огненный шар + ударная волна + урон врагам + отдача игроку
+    function explodeRocket(pos, radius, dmg) {
+      sounds.boom();
+      const killsBefore = kills;
+      const ball = new THREE.Mesh(boomGeo, boomMat);
+      ball.scale.setScalar(radius);
+      ball.position.copy(pos);
+      ball.position.y = Math.max(pos.y, 0.5);
+      scene.add(ball);
+      dust.push({ mesh: ball, v: new THREE.Vector3(), life: 0.45 });
+      // ударная волна — расширяющееся кольцо
+      const ring = new THREE.Mesh(boomRingGeo, boomRingMat);
+      ring.position.copy(ball.position);
+      ring.rotation.x = -Math.PI / 2;
+      scene.add(ring);
+      dust.push({ mesh: ring, v: new THREE.Vector3(), life: 0.35 });
+      spawnDust(pos, 12);
+      spawnBlood(pos, 8);
+      // урон врагам — чем ближе к эпицентру, тем больнее
+      for (const e of enemies) {
+        if (e.dead) continue;
+        const d = e.group.position.distanceTo(pos);
+        if (d < radius + e.radius) {
+          const fall = 1 - Math.min(1, d / radius);
+          e.takeDamage(Math.round(dmg * (0.4 + fall * 0.6) * dmgMult()), false);
+        }
+      }
+      // МЕГАКИЛЛ: одним взрывом уложили сразу нескольких!
+      const megas = kills - killsBefore;
+      if (megas >= 3) showMsg('💥 МЕГАКИЛЛ ×' + megas + '!', 1.4);
+      // своя ракета вблизи = урон игроку (классика Serious Sam!)
+      const dp = player.pos.distanceTo(pos);
+      if (dp < radius * 0.7) damagePlayer(Math.round(28 * (1 - dp / (radius * 0.7))));
+      // бочки в радиусе взрыва — ДЕТОНИРУЮТ (цепная реакция!)
+      for (let i = barrels.length - 1; i >= 0; i--) {
+        const b = barrels[i];
+        if (b.mesh.position.distanceTo(pos) < radius + b.r) explodeBarrel(i);
+      }
+      camShake = Math.max(camShake, 0.35);
+    }
+
+    function updateEffects(dt) {
+      // ракеты игрока: АВТОНАВЕДЕНИЕ, дымовой след, взрыв при попадании
+      for (let i = rockets.length - 1; i >= 0; i--) {
+        const r = rockets[i];
+        // гоминг: если цель жива — ракета плавно поворачивает к ней; нет цели — ищет новую
+        if (r.target && r.target.dead) r.target = null;
+        if (!r.target) {
+          let bestD = Infinity;
+          for (const e of enemies) {
+            if (e.dead) continue;
+            const d = e.group.position.distanceTo(r.pos);
+            if (d < 85 && d < bestD) { bestD = d; r.target = e; }
+          }
+        }
+        if (r.target) {
+          // цель-точка с упреждением: цель убегает — ракета целится «вперёд» неё
+          const lead = new THREE.Vector3().subVectors(r.target.group.position, r.pos);
+          lead.y = 0;
+          const leadD = lead.length();
+          if (leadD > 0.01) {
+            lead.normalize();
+            // чем ближе цель — тем агрессивнее поворот (ракета «пикирует»)
+            const aggression = Math.min(1, 30 / (leadD + 1));
+            const vn = r.vel.clone().normalize();
+            const newDir = vn.clone().lerp(lead, Math.min(1, (4.5 + aggression * 4) * dt)).normalize();
+            r.vel.copy(newDir).multiplyScalar(r.speed);
+          }
+        }
+        r.pos.addScaledVector(r.vel, dt);
+        r.life -= dt;
+        if (r.mesh) {
+          r.mesh.position.copy(r.pos);
+          r.mesh.lookAt(r.pos.clone().add(r.vel));
+        }
+        // дымовой след за ракетой (с лимитом, чтобы не плодить тысячи мешей)
+        r.smokeT -= dt;
+        if (r.smokeT <= 0 && r.mesh && dust.length < 130) {
+          r.smokeT = 0.035;
+          const sm = new THREE.Mesh(smokeGeo, smokeMat);
+          sm.position.copy(r.pos);
+          sm.scale.setScalar(0.16);
+          scene.add(sm);
+          dust.push({ mesh: sm, v: new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.5, (Math.random() - 0.5) * 0.6), life: 0.4 });
+        }
+        let hit = r.pos.y <= 0.35 || r.life <= 0;
+        if (!hit) {
+          // столкновение с препятствиями (скалы, колонны, стены — не пролететь!)
+          for (const o of obstacles) {
+            if (o.r) {
+              const dx = r.pos.x - o.x, dz = r.pos.z - o.z;
+              const minD = o.r + 0.2;
+              if (dx * dx + dz * dz < minD * minD) { hit = true; break; }
+            } else {
+              // стена-бокс: ракета влетела в прямоугольник?
+              if (r.pos.x > o.minX - 0.2 && r.pos.x < o.maxX + 0.2 &&
+                  r.pos.z > o.minZ - 0.2 && r.pos.z < o.maxZ + 0.2) { hit = true; break; }
+            }
+          }
+        }
+        if (!hit) {
+          // щедрый порог попадания: ракета взрывается РЯДОМ с целью, а взрыв (радиус 6.5)
+          // всё равно накрывает её — никакого бесконечного кружения вокруг врага!
+          for (const e of enemies) {
+            if (e.dead) continue;
+            if (e.group.position.distanceTo(r.pos) < e.radius + 2.6) { hit = true; break; }
+          }
+        }
+        if (hit) {
+          explodeRocket(r.pos, 6.5, WEAPONS[3].dmg);
+          if (r.mesh) scene.remove(r.mesh);
+          rockets.splice(i, 1);
+        }
+      }
+      // огненные шары Плевуна
+      for (const f of fireballs) {
+        if (f.mesh) f.mesh.position.copy(f.pos);
+      }
+      for (let i = tracers.length - 1; i >= 0; i--) {
+        const tr = tracers[i];
+        tr.life -= dt;
+        tr.mesh.material.opacity = Math.max(0, tr.life / 0.07);
+        if (tr.life <= 0) { scene.remove(tr.mesh); tracers.splice(i, 1); }
+      }
+      for (let i = blood.length - 1; i >= 0; i--) {
+        const b = blood[i];
+        b.v.y -= 9 * dt;
+        b.mesh.position.addScaledVector(b.v, dt);
+        b.life -= dt;
+        b.mesh.scale.multiplyScalar(0.96);
+        if (b.life <= 0) { scene.remove(b.mesh); blood.splice(i, 1); }
+      }
+      // «куски» врагов: летят, крутятся, отскакивают от песка
+      for (let i = gibs.length - 1; i >= 0; i--) {
+        const gb = gibs[i];
+        gb.v.y -= 18 * dt;
+        gb.mesh.position.addScaledVector(gb.v, dt);
+        gb.mesh.rotation.x += gb.rv.x * dt;
+        gb.mesh.rotation.z += gb.rv.z * dt;
+        if (gb.mesh.position.y <= 0.05) {
+          gb.mesh.position.y = 0.05;
+          gb.v.y = Math.abs(gb.v.y) * 0.35;
+          gb.v.x *= 0.7;
+          gb.v.z *= 0.7;
+        }
+        gb.life -= dt;
+        if (gb.life <= 0) { scene.remove(gb.mesh); gibs.splice(i, 1); }
+      }
+      // пыль: поднимается и тает
+      for (let i = dust.length - 1; i >= 0; i--) {
+        const d = dust[i];
+        d.mesh.position.addScaledVector(d.v, dt);
+        d.v.multiplyScalar(0.9);
+        d.life -= dt;
+        d.mesh.scale.multiplyScalar(1 + dt * 1.5);
+        if (d.life <= 0) { scene.remove(d.mesh); dust.splice(i, 1); }
+      }
+    }
+
+    // ------------------------------------------------------------
+    // УПРАВЛЕНИЕ
+    // ------------------------------------------------------------
+    const keys = new Set();
+    let mouseDown = false;
+    let lookDrag = false;
+    let lookMode = 'pointer'; // 'pointer' (захват мыши) | 'drag' (ПКМ)
+    let lastMX = 0, lastMY = 0;
+
+    addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();
+      if (e.repeat) return;
+      keys.add(e.code);
+      // [ ] — чувствительность мыши (работает везде)
+      if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+        mouseSens = Math.max(0.3, Math.min(3, mouseSens * (e.code === 'BracketRight' ? 1.25 : 0.8)));
+        saveVal('gd_sens', mouseSens);
+        showPickup('🖱 Чувствительность: ' + mouseSens.toFixed(2));
+        return;
+      }
+      // M — музыка вкл/выкл (работает и в меню, и в паузе, и в бою!)
+      if (e.code === 'KeyM') {
+        musicOn = !musicOn;
+        saveVal('gd_music', musicOn ? 1 : 0);
+        if (musicOn) {
+          const to = $(MUS_TRACKS[musicMode]);
+          to.volume = MUS_VOL;
+          to.play().catch(() => {}); // play() сам начнёт загрузку (preload=none)
+        } else {
+          if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+          musMenu.volume = 0; musBattle.volume = 0; musBoss.volume = 0;
+        }
+        showPickup(musicOn ? '🎵 МУЗЫКА ВКЛЮЧЕНА' : '🔇 МУЗЫКА ВЫКЛЮЧЕНА');
+        return;
+      }
+      // Esc из пролога — назад в меню (мало ли передумал)
+      if (e.code === 'Escape' && state === 'story') { showMainMenu(); return; }
+      if (state !== 'playing') return;
+      if (e.code === 'KeyR') startReload();
+      // G — вскочить на моноколесо (купленное в магазине!)
+      if (e.code === 'KeyG' && wheelOwned) {
+        riding = !riding;
+        sounds.beep();
+        showPickup(riding ? '🛞 ЕДЕШЬ! Скорость ×1.7 · таран (G — слезть)' : '🛞 СЛЕЗ С КОЛЕСА');
+        return;
+      }
+      if (e.code === 'Digit1') switchWeapon(0);
+      if (e.code === 'Digit2') switchWeapon(1);
+      if (e.code === 'Digit3') switchWeapon(2);
+      if (e.code === 'Digit4') switchWeapon(3);
+      if (e.code === 'Digit5' && wheelOwned) switchWeapon(4);
+    });
+    addEventListener('keyup', (e) => keys.delete(e.code));
+
+    document.addEventListener('mousedown', (e) => {
+      if (state !== 'playing') return;
+      if (e.button === 0) {
+        mouseDown = true;
+        if (!WEAPONS[current].auto) fire();
+      }
+      if (e.button === 2 && lookMode === 'drag') {
+        lookDrag = true;
+        lastMX = e.clientX; lastMY = e.clientY;
+      }
+    });
+    document.addEventListener('mouseup', (e) => {
+      if (e.button === 0) mouseDown = false;
+      if (e.button === 2) lookDrag = false;
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (state !== 'playing') return;
+      if (document.pointerLockElement) {
+        // скачки курсора при (пере)захвате мыши — игнорируем, чтобы взгляд не «улетал»
+        const mx = Math.abs(e.movementX) > 260 ? 0 : e.movementX;
+        const my = Math.abs(e.movementY) > 260 ? 0 : e.movementY;
+        player.yaw -= mx * 0.0022 * mouseSens;
+        player.pitch -= my * 0.0022 * mouseSens;
+      } else if (lookMode === 'drag' && lookDrag) {
+        player.yaw -= (e.clientX - lastMX) * 0.0035 * mouseSens;
+        player.pitch -= (e.clientY - lastMY) * 0.0035 * mouseSens;
+        lastMX = e.clientX; lastMY = e.clientY;
+      }
+      player.pitch = Math.max(-1.5, Math.min(1.5, player.pitch));
+    });
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('wheel', (e) => {
+      if (state !== 'playing') return;
+      switchWeapon(current + (e.deltaY > 0 ? 1 : -1));
+    });
+
+    document.addEventListener('pointerlockchange', () => {
+      const locked = !!document.pointerLockElement;
+      if (locked) {
+        if (state === 'paused') { state = 'playing'; dom.overlay.classList.add('hidden'); }
+      } else if (state === 'playing') {
+        state = 'paused';
+        mouseDown = false; // чтобы игрок не «залипал» в стрельбе после паузы
+        showOverlay('ПАУЗА', 'Игра приостановлена.', 'ПРОДОЛЖИТЬ ▶', false);
+      }
+    });
+    document.addEventListener('pointerlockerror', () => {
+      lookMode = 'drag';
+      dom.gunHint.classList.remove('hidden');
+    });
+
+    function tryLock() {
+      if (lookMode === 'drag') return;
+      try {
+        const p = document.body.requestPointerLock();
+        if (p && p.catch) p.catch(() => {});
+      } catch {
+        lookMode = 'drag';
+        dom.gunHint.classList.remove('hidden');
+      }
+      setTimeout(() => {
+        if (!document.pointerLockElement) {
+          lookMode = 'drag';
+          dom.gunHint.classList.remove('hidden');
+        }
+      }, 400);
+    }
+
+    function switchWeapon(i) {
+      const n = WEAPONS.length;
+      // ищем ближайшее доступное оружие (слот 5 «Колесо» — только если куплено)
+      for (let k = 0; k < n; k++) {
+        const next = (((i + k) % n) + n) % n;
+        if (next === 4 && !wheelOwned) continue;
+        if (next === current) return;
+        current = next;
+        sounds.switch_();
+        // показываем только активное оружие
+        allGuns.forEach((g, idx) => { g.visible = idx === current; });
+        return;
+      }
+    }
+
+    function startReload() {
+      const w = WEAPONS[current];
+      if (w.id === 4) return; // колесо «перезаряжается» само, когда вернётся
+      if (w.reloadTimer > 0 || w.mag >= w.magSize) return;
+      w.reloadTimer = w.reloadTime;
+      sounds.reload();
+    }
+
+    // ------------------------------------------------------------
+    // ИГРОК: движение и урон
+    // ------------------------------------------------------------
+    function updatePlayer(dt) {
+      const fwd = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw);
+      const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw);
+      const move = new THREE.Vector3();
+      if (keys.has('KeyW')) move.add(fwd);
+      if (keys.has('KeyS')) move.sub(fwd);
+      if (keys.has('KeyD')) move.add(right);
+      if (keys.has('KeyA')) move.sub(right);
+      const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
+      let speed = (sprint ? CONFIG.sprintSpeed : CONFIG.walkSpeed) * speedMult();
+      if (riding) {
+        speed *= 1.7; // моноколесо быстрее!
+        // «занос»: боковые повороты слабее — управляемость хуже, как на настоящем колесе
+        move.addScaledVector(right, -move.dot(right) * 0.45);
+      }
+      moving = move.lengthSq() > 0;
+      if (moving) move.normalize().multiplyScalar(speed);
+      player.vel.x = move.x;
+      player.vel.z = move.z;
+
+      // ТАРАН на колесе: сбиваем врагов с ног (урон + отбрасывание)!
+      if (riding) {
+        const tmp = new THREE.Vector3();
+        for (const e of enemies) {
+          if (e.dead || e.type === 'boss') continue;
+          const d = e.group.position.distanceTo(player.pos);
+          if (d < 2.0 && gameTime > e.lastHit + 0.5) {
+            e.lastHit = gameTime; // сбитый враг не успевает ударить — его отбросило
+            e.takeDamage(25 * dmgMult(), false);
+            tmp.subVectors(e.group.position, player.pos);
+            tmp.y = 0;
+            if (tmp.lengthSq() > 0.0001) tmp.normalize().multiplyScalar(9);
+            e.group.position.add(tmp);
+            spawnBlood(e.group.position, 3);
+            sounds.hit();
+            camShake = Math.max(camShake, 0.25);
+          }
+        }
+      }
+
+      player.vel.y -= CONFIG.gravity * dt;
+      if (keys.has('Space') && player.onGround) {
+        player.vel.y = CONFIG.jumpSpeed;
+        player.onGround = false;
+      }
+      player.pos.addScaledVector(player.vel, dt);
+      if (player.pos.y <= CONFIG.eyeHeight) {
+        player.pos.y = CONFIG.eyeHeight;
+        player.vel.y = 0;
+        player.onGround = true;
+      }
+      // границы: в коридоре — стены каньона и тупик за финишем, на аренах — круг
+      if (LEVELS[levelIndex].corridor) {
+        const L = LEVELS[levelIndex];
+        player.pos.x = Math.max(-(L.corrW - 1.4), Math.min(L.corrW - 1.4, player.pos.x));
+        player.pos.z = Math.max(L.corrFinishZ - 12, Math.min(L.corrStartZ + 8, player.pos.z));
+      } else {
+        const r = Math.hypot(player.pos.x, player.pos.z);
+        if (r > CONFIG.arenaRadius - 2) {
+          player.pos.x *= (CONFIG.arenaRadius - 2) / r;
+          player.pos.z *= (CONFIG.arenaRadius - 2) / r;
+        }
+      }
+      // столкновения с колоннами и скалами — сквозь них не пройти!
+      resolveObstacles(player.pos, 0.5);
+      // звук шагов по песку
+      if (moving && player.onGround) {
+        stepTimer -= dt;
+        if (stepTimer <= 0) {
+          stepTimer = sprint ? 0.32 : 0.45;
+          sounds.step();
+        }
+      }
+    }
+
+    function damagePlayer(amount) {
+      if (state !== 'playing') return;
+      if (gameTime < player.invulnUntil) return;
+      player.invulnUntil = gameTime + 0.9;
+      player.hp -= amount;
+      hurtFlash = 1;
+      camShake = Math.max(camShake, 0.35);
+      sounds.hurt();
+      if (player.hp <= 0) {
+        player.hp = 0;
+        die();
+      }
+    }
+
+    function die() {
+      state = 'dead';
+      document.exitPointerLock();
+      setMusic('menu'); // эмбиент меню
+      // рекорд сохраняется навсегда
+      if (score > loadVal('gd_best', 0)) saveVal('gd_best', score);
+      setTimeout(() => {
+        // ПАСХАЛКА: иногда вместо «ВЫ ПОГИБЛИ» — ехидный подкол 😏
+        const isTaunt = Math.random() < 0.65;
+        showOverlay(
+          isTaunt ? DEATH_TAUNTS[Math.floor(Math.random() * DEATH_TAUNTS.length)] : 'ВЫ ПОГИБЛИ',
+          'Уровень: ' + LEVELS[levelIndex].name + ' · Волна: ' + wave + ' · Счёт: ' + score +
+          ' · Убийств: ' + kills + ' · 🪙 Монет: ' + coins,
+          'ЗАНОВО ▶'
+        );
+        if (isTaunt) dom.overlayTitle.classList.add('taunt'); // длинная шутка — шрифт поменьше
+      }, 900);
+    }
+
+    // ------------------------------------------------------------
+    // СООБЩЕНИЯ НА ЭКРАНЕ
+    // ------------------------------------------------------------
+    let msgTimer = null;
+    function showMsg(text, dur = 2.2) {
+      dom.centerMsg.textContent = text;
+      dom.centerMsg.classList.add('on');
+      clearTimeout(msgTimer);
+      msgTimer = setTimeout(() => dom.centerMsg.classList.remove('on'), (dur + 0.3) * 1000);
+    }
+    let pickTimer = null;
+    function showPickup(text) {
+      dom.pickupMsg.textContent = text;
+      dom.pickupMsg.classList.add('on');
+      clearTimeout(pickTimer);
+      pickTimer = setTimeout(() => dom.pickupMsg.classList.remove('on'), 1500);
+    }
+
+    function showOverlay(title, sub, btnText, withShop = true, withLevels = false) {
+      dom.overlayTitle.classList.remove('taunt'); // обычный заголовок по умолчанию
+      dom.overlayTitle.textContent = title;
+      dom.overlaySub.textContent = sub;
+      dom.overlayBtn.textContent = btnText;
+      dom.overlay.classList.remove('hidden');
+      if (withLevels) {
+        renderLevels();
+        dom.levelSelect.classList.remove('hidden');
+      } else {
+        dom.levelSelect.classList.add('hidden');
+      }
+      if (withShop) {
+        renderShop();
+        dom.shop.classList.remove('hidden');
+      } else {
+        dom.shop.classList.add('hidden');
+      }
+    }
+
+    // Селектор уровней в меню (заблокированные — закрыты до прохождения предыдущего)
+    function renderLevels() {
+      dom.levelItems.innerHTML = '';
+      for (let i = 0; i < LEVELS.length; i++) {
+        const l = LEVELS[i];
+        const locked = i > unlockedLevel;
+        const btn = document.createElement('button');
+        btn.className = 'level-btn' + (i === levelIndex ? ' sel' : '') + (locked ? ' locked' : '');
+        btn.disabled = locked;
+        btn.innerHTML = (locked ? '🔒 ' : (i === levelIndex ? '⭐ ' : (l.corridor ? '🔥 ' : '📍 '))) + (i + 1) + '. ' + l.name +
+          '<small>' + l.desc + '<br>' + (l.corridor ? (l.corrStartZ - l.corrFinishZ) + ' м коридора' : l.waves + ' волн') + ' · награда ' + l.reward + ' 🪙</small>';
+        btn.addEventListener('click', () => { levelIndex = i; renderLevels(); sounds.switch_(); });
+        dom.levelItems.append(btn);
+      }
+    }
+
+    // Победа уровня: награда, разблокировка следующего, экран победы
+    function levelComplete() {
+      const l = LEVELS[levelIndex];
+      coins += l.reward;
+      saveVal('gd_coins', coins);
+      if (levelIndex >= unlockedLevel && levelIndex < LEVELS.length - 1) {
+        unlockedLevel = levelIndex + 1;
+        saveVal('gd_level', unlockedLevel);
+      }
+      state = 'won';
+      document.exitPointerLock();
+      setMusic('menu');
+      setTimeout(() => {
+        if (l.corridor) {
+          // финал кампании: развязка + титры!
+          showOverlay(
+            '🏆 КАМПАНИЯ ПРОЙДЕНА!',
+            STORY.finale + '\n\n' + STORY.credits + '\n\nСчёт: ' + score + ' · Убийств: ' + kills +
+              ' · Награда: +' + l.reward + ' 🪙',
+            '🏆 В МЕНЮ', true, false
+          );
+        } else {
+          // победа уровня со сюжетной строчкой-приколом
+          showOverlay(
+            '✅ УРОВЕНЬ ПРОЙДЕН!',
+            STORY.winLine[levelIndex] + ' · Награда: +' + l.reward + ' 🪙 · Открыт уровень: ' + LEVELS[levelIndex + 1].name,
+            '▶ СЛЕДУЮЩИЙ УРОВЕНЬ',
+            true, false
+          );
+        }
+      }, 2300);
+    }
+
+    // Главное меню: рекорд, выбор уровня, магазин
+    function showMainMenu() {
+      state = 'menu';
+      levelIndex = Math.min(levelIndex, unlockedLevel);
+      showOverlay(
+        'ГЕРОЙ ПУСТЫНИ',
+        'Кампания в духе Serious Sam — пройди 5 локаций и верни свой термос! · 🏆 Рекорд: ' + loadVal('gd_best', 0),
+        '▶ НАЧАТЬ УРОВЕНЬ', true, true
+      );
+      setMusic('menu');
+      startMenuCinematic(); // эпичный бой на фоне меню =)
+    }
+
+    // Пролог сюжета — экран при старте кампании (1-й уровень)
+    function showPrologue() {
+      state = 'story';
+      showOverlay('ГЕРОЙ ПУСТЫНИ', STORY.prologue, '▶ В ПОГОНЮ ЗА ТЕРМОСОМ', false, false);
+    }
+
+    // ------------------------------------------------------------
+    // МЕНЮ-СИНЕМАТИКА: эпичный бой на фоне меню!
+    // Камера облетает поле боя, толпа орды бежит, взрывы разносят её в клочья —
+    // сразу видно, что тебя ждёт =)
+    // ------------------------------------------------------------
+    const menuCin = {
+      active: false, t: 0, ang: 0.6, spawnT: 0, boomT: 1.2,
+      center: new THREE.Vector3(0, 0, 20), // центр «боя» перед камерой
+      members: [], // { group, type, seed, speed }
+    };
+    function startMenuCinematic() {
+      if (menuCin.active) return;
+      menuCin.active = true;
+      menuCin.t = 0;
+      menuCin.spawnT = 0;
+      menuCin.boomT = 1.2;
+      for (let i = 0; i < 16; i++) menuCinSpawnMember(); // сразу наполняем поле боем
+      dom.overlay.classList.add('cinema'); // фон светлее — битва видна за меню
+    }
+    function stopMenuCinematic() {
+      if (!menuCin.active) return;
+      menuCin.active = false;
+      for (const m of menuCin.members) { disposeGroup(m.group); scene.remove(m.group); }
+      menuCin.members.length = 0;
+      dom.overlay.classList.remove('cinema');
+    }
+    function menuCinSpawnMember() {
+      if (menuCin.members.length > 26) return;
+      const types = ['walker', 'walker', 'charger', 'charger', 'kamikaze'];
+      const type = types[Math.floor(Math.random() * types.length)];
+      const g = buildEnemyMesh(type);
+      const a = Math.random() * Math.PI * 2;
+      const r = 18 + Math.random() * 12;
+      g.position.set(menuCin.center.x + Math.cos(a) * r, 0, menuCin.center.z + Math.sin(a) * r);
+      g.rotation.y = Math.random() * Math.PI * 2;
+      scene.add(g);
+      menuCin.members.push({ group: g, type, seed: Math.random() * 10, speed: 3 + Math.random() * 3.5 });
+    }
+    function updateMenuCinematic(dt) {
+      menuCin.t += dt;
+      // камера медленно облетает поле боя (как в трейлере!)
+      menuCin.ang += dt * 0.14;
+      camera.position.set(
+        menuCin.center.x + Math.cos(menuCin.ang) * 40,
+        9 + Math.sin(menuCin.t * 0.5) * 1.5,
+        menuCin.center.z + Math.sin(menuCin.ang) * 40
+      );
+      camera.lookAt(menuCin.center.x, 2, menuCin.center.z);
+      // лёгкая тряска от взрывов (camShake уже затухает в updateCamera)
+      if (camShake > 0.003) {
+        camera.position.x += (Math.random() - 0.5) * camShake * 0.3;
+        camera.position.y += (Math.random() - 0.5) * camShake * 0.3;
+      }
+      // толпа пополняется
+      menuCin.spawnT -= dt;
+      if (menuCin.spawnT <= 0) { menuCin.spawnT = 0.35 + Math.random() * 0.5; menuCinSpawnMember(); }
+      // толпа бежит к центру (обтекая камни и стены)
+      for (let i = menuCin.members.length - 1; i >= 0; i--) {
+        const m = menuCin.members[i];
+        const dx = menuCin.center.x - m.group.position.x;
+        const dz = menuCin.center.z - m.group.position.z;
+        const d = Math.hypot(dx, dz);
+        if (d > 1) {
+          const sway = Math.sin(menuCin.t * 6 + m.seed) * 0.6;
+          const nx = dx / d, nz = dz / d;
+          const px = -nz, pz = nx;
+          m.group.position.x += (nx + px * sway) * m.speed * dt;
+          m.group.position.z += (nz + pz * sway) * m.speed * dt;
+          m.group.rotation.y = Math.atan2(nx + px * sway, nz + pz * sway);
+        } else {
+          m.group.position.x += (Math.random() - 0.5) * m.speed * dt * 2;
+          m.group.position.z += (Math.random() - 0.5) * m.speed * dt * 2;
+        }
+        resolveObstacles(m.group.position, 0.5); // толпа обтекает препятствия
+        m.group.position.y = Math.sin(menuCin.t * 7 + m.seed) * 0.05;
+        if (d > 34) { // убежали далеко — заменить новыми
+          disposeGroup(m.group); scene.remove(m.group);
+          menuCin.members.splice(i, 1);
+        }
+      }
+      // МОЩНЫЕ ВЗРЫВЫ среди толпы!
+      menuCin.boomT -= dt;
+      if (menuCin.boomT <= 0) {
+        menuCin.boomT = 1.5 + Math.random() * 1.8;
+        if (menuCin.members.length) {
+          const target = menuCin.members[Math.floor(Math.random() * menuCin.members.length)];
+          const pos = target.group.position.clone();
+          pos.y = 0.6;
+          explodeRocket(pos, 7, 0); // чисто визуал (в бою нет врагов — урон никому не идёт)
+          // взрыв сносит толпу вокруг — куски летят!
+          for (let i = menuCin.members.length - 1; i >= 0; i--) {
+            const o = menuCin.members[i];
+            if (o.group.position.distanceTo(pos) < 8) {
+              spawnGibs(o.group.position, o.type);
+              disposeGroup(o.group);
+              scene.remove(o.group);
+              menuCin.members.splice(i, 1);
+            }
+          }
+          camShake = Math.max(camShake, 0.5);
+          for (let i = 0; i < 3; i++) menuCinSpawnMember(); // пополняем потери!
+        } else {
+          explodeRocket(new THREE.Vector3(menuCin.center.x, 0.6, menuCin.center.z), 7, 0);
+        }
+      }
+    }
+
+    // ------------------------------------------------------------
+    // МАГАЗИН УЛУЧШЕНИЙ
+    // ------------------------------------------------------------
+    function renderShop() {
+      dom.shopCoins.textContent = coins;
+      dom.shopItems.innerHTML = '';
+      for (const u of UPGRADES) {
+        const lvl = upgrades[u.key];
+        const maxed = lvl >= u.max;
+        const cost = upgradeCost(u);
+        const item = document.createElement('div');
+        item.className = 'shop-item';
+        const name = document.createElement('div');
+        name.className = 'si-name';
+        name.textContent = u.name;
+        const desc = document.createElement('div');
+        desc.className = 'si-desc';
+        desc.textContent = u.desc;
+        const lvlEl = document.createElement('div');
+        lvlEl.className = 'si-level';
+        lvlEl.textContent = 'Ур. ' + lvl + ' / ' + u.max;
+        item.append(name, desc, lvlEl);
+        if (maxed) {
+          const max = document.createElement('div');
+          max.className = 'shop-max';
+          max.textContent = '✓ МАКСИМУМ';
+          item.append(max);
+        } else {
+          const btn = document.createElement('button');
+          btn.className = 'shop-btn';
+          btn.textContent = '🪙 ' + cost;
+          btn.disabled = coins < cost;
+          btn.addEventListener('click', () => {
+            if (coins < cost) return;
+            coins -= cost;
+            upgrades[u.key]++;
+            saveVal('gd_coins', coins);
+            saveVal('gd_upgrades', upgrades);
+            sounds.pickup();
+            renderShop();
+          });
+          item.append(btn);
+        }
+        dom.shopItems.append(item);
+      }
+      // ---- ПАСХАЛКА: «Моноколесо» (9999 🪙, один раз, награда — три бонуса!) ----
+      const wheelItem = document.createElement('div');
+      wheelItem.className = 'shop-item';
+      const wName = document.createElement('div');
+      wName.className = 'si-name';
+      wName.textContent = '🛞 Моноколесо';
+      const wDesc = document.createElement('div');
+      wDesc.className = 'si-desc';
+      wDesc.textContent = wheelOwned
+        ? 'Награда: езда с тараном (G) + метательное колесо (слот 5) + титул «Моноколесная Легенда»'
+        : '«Покупают только отчаянные. Улучшение: ты теперь ездишь, а не ходишь. Все моноколесники считают, что ты делаешь это неправильно.»';
+      const wLvl = document.createElement('div');
+      wLvl.className = 'si-level';
+      wLvl.textContent = wheelOwned ? '🛞 МОНОКОЛЕСНАЯ ЛЕГЕНДА' : 'Уникальное · один раз';
+      wheelItem.append(wName, wDesc, wLvl);
+      if (wheelOwned) {
+        const owned = document.createElement('div');
+        owned.className = 'shop-max';
+        owned.textContent = '✓ КУПЛЕНО';
+        wheelItem.append(owned);
+      } else {
+        const btn = document.createElement('button');
+        btn.className = 'shop-btn';
+        btn.textContent = '🪙 9999';
+        btn.disabled = coins < 9999;
+        btn.addEventListener('click', () => {
+          if (coins < 9999) return;
+          coins -= 9999;
+          wheelOwned = 1;
+          saveVal('gd_coins', coins);
+          saveVal('gd_wheel', 1);
+          sounds.pickup();
+          sounds.wave(); // эпично!
+          wheelCelebrate = 1; // надпись «КУПИЛ КОЛЕСО» появится на весь экран при старте игры
+          renderShop();
+        });
+        wheelItem.append(btn);
+      }
+      dom.shopItems.append(wheelItem);
+    }
+
+    // ------------------------------------------------------------
+    // ИГРОВОЙ ЦИКЛ
+    // ------------------------------------------------------------
+    const clock = new THREE.Clock();
+
+    // освобождаем память геометрий и материалов (важно при долгой игре)
+    function disposeGroup(g) {
+      g.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          for (const m of mats) m.dispose();
+        }
+      });
+    }
+
+    function resetGame() {
+      for (const e of enemies) { disposeGroup(e.group); scene.remove(e.group); }
+      for (const g of pickups) scene.remove(g);
+      for (const t of tracers) scene.remove(t.mesh);
+      for (const b of blood) scene.remove(b.mesh);
+      for (const gb of gibs) scene.remove(gb.mesh);
+      for (const d of dust) scene.remove(d.mesh);
+      for (const f of fireballs) if (f.mesh) scene.remove(f.mesh);
+      enemies = []; pickups = []; tracers = []; blood = []; gibs = []; dust = []; fireballs = [];
+      keys.clear(); // чтобы «зажатые» клавиши не переносились в новую игру
+      mouseDown = false;
+      lookDrag = false;
+      combo = 0; comboTimer = 0;
+      dom.comboText.classList.add('hidden');
+      dom.bossWrap.classList.add('hidden');
+
+      const L = LEVELS[levelIndex];
+      Object.assign(player, {
+        // в коридоре игрок стартует в начале каньона (по оси Z)
+        pos: new THREE.Vector3(0, CONFIG.eyeHeight, L.corridor ? L.corrStartZ : 0),
+        vel: new THREE.Vector3(),
+        yaw: 0, pitch: 0,
+        hp: maxHp(),
+        onGround: true,
+        invulnUntil: 0,
+      });
+      wave = 0; score = 0; kills = 0;
+      spawnQueue = []; waveState = 'idle';
+      corrHordeT = 0; corrFinal = false; corrGates = 0;
+      for (const w of WEAPONS) {
+        w.mag = w.magSize; w.fireTimer = 0; w.reloadTimer = 0;
+      }
+      current = 0;
+      allGuns.forEach((g, idx) => { g.visible = idx === 0; });
+      rideWheelView.visible = false;
+      riding = false; rideBeepT = 0; // слезаем с колеса при рестарте
+      WEAPONS[2].heat = 0; // миниган остыл
+      for (const r of rockets) if (r.mesh) scene.remove(r.mesh);
+      rockets = [];
+      for (const tw of throwWheels) scene.remove(tw.mesh);
+      throwWheels = [];
+      hurtFlash = 0; camShake = 0; recoilUp = 0;
+      dom.shop.classList.add('hidden');
+      dom.overlay.classList.add('hidden');
+      stopMenuCinematic(); // синематик меню останавливается — началась игра!
+      state = 'playing';
+      applyLevelTheme(levelIndex); // декорации выбранного уровня
+      setMusic('battle'); // боевая музыка!
+      // достижение «КУПИЛ КОЛЕСО» — на весь экран, когда начинается игра
+      if (wheelCelebrate) {
+        wheelCelebrate = 0;
+        showMsg('🛞 КУПИЛ КОЛЕСО! ТЫ — ЛЕГЕНДА', 3.4);
+      }
+      if (LEVELS[levelIndex].corridor) startCorridor();
+      else startWave(1);
+      tryLock();
+    }
+
+    // Таймеры оружия
+    function updateWeapons(dt) {
+      for (const w of WEAPONS) {
+        if (w.fireTimer > 0) w.fireTimer -= dt;
+        if (w.reloadTimer > 0) {
+          w.reloadTimer -= dt;
+          if (w.reloadTimer <= 0) w.mag = w.magSize;
+        }
+        // миниган остывает, когда не стреляет
+        if (w.id === 2 && w.heat > 0) w.heat = Math.max(0, w.heat - 26 * dt);
+      }
+      const w = WEAPONS[current];
+      if (mouseDown && w.auto && w.fireTimer <= 0 && w.reloadTimer <= 0) fire();
+      // автоперезарядка, когда кончились патроны (колесо перезаряжается само при возврате)
+      if (w.id !== 4 && w.mag === 0 && w.reloadTimer <= 0 && state === 'playing') startReload();
+    }
+
+    // Камера: отдача, тряска, обзор, раскачивание оружия
+    function updateCamera(dt) {
+      recoilUp *= Math.exp(-9 * dt);
+      camShake *= Math.exp(-8 * dt);
+
+      let shX = 0, shY = 0;
+      if (camShake > 0.003) {
+        shX = (Math.random() - 0.5) * camShake * 0.15;
+        shY = (Math.random() - 0.5) * camShake * 0.15;
+      }
+      camera.position.copy(player.pos);
+      camera.rotation.set(player.pitch + recoilUp + shX, player.yaw + shY, 0);
+
+      // раскачивание оружия при ходьбе
+      const moveAmt = moving ? 1 : 0;
+      bobPhase += dt * (moving ? 7 : 2);
+      const bobY = Math.sin(bobPhase) * 0.02 * moveAmt;
+      const bobX = Math.sin(bobPhase * 0.5) * 0.012 * moveAmt;
+      for (const g of allGuns) {
+        g.position.y = (g === gunRifle ? -0.17 : -0.2) + bobY;
+        g.position.x = (g === gunRifle ? 0.24 : 0.3) + bobX;
+        g.rotation.z = Math.sin(bobPhase * 0.5) * 0.015 * moveAmt;
+      }
+      // золотое колесо в руке — крутится, пока держишь слот 5
+      if (current === 4) gunWheel.rotation.z += dt * 14;
+      // вид снизу при езде: золотое моноколесо катится под тобой
+      rideWheelView.visible = riding;
+      if (riding) {
+        rideWheelView.rotation.x += dt * 16;
+        rideWheelView.rotation.z += dt * 5;
+      }
+
+      // динамическое поле зрения при беге
+      const sprinting = moving && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
+      const targetFov = sprinting ? 82 : 75;
+      camera.fov += (targetFov - camera.fov) * Math.min(1, 8 * dt);
+      camera.updateProjectionMatrix();
+
+      // затухающие эффекты
+      hurtFlash = Math.max(0, hurtFlash - dt * 2.2);
+      flashLife -= dt;
+      flashSprite.visible = flashLife > 0;
+      muzzleLight.intensity *= Math.exp(-14 * dt);
+      dom.hurtFlash.style.opacity = hurtFlash > 0 ? hurtFlash * 0.55 : 0;
+    }
+
+    // Интерфейс
+    function updateHUD() {
+      const pct = Math.max(0, player.hp) / maxHp() * 100;
+      dom.hpFill.style.width = pct + '%';
+      dom.hpFill.style.background = pct > 50 ? 'linear-gradient(180deg,#66d96b,#2f9e3a)' : pct > 25 ? 'linear-gradient(180deg,#ffb347,#ff7b00)' : 'linear-gradient(180deg,#ff6b5b,#d32f2f)';
+      dom.hpText.textContent = Math.ceil(player.hp);
+      const w = WEAPONS[current];
+      // метательное колесо: пока летит — «В ПОЛЁТЕ…», вернулось — снова 1
+      let ammoTxt = w.reloadTimer > 0 ? 'ЗАРЯДКА…' : w.mag + ' / ∞';
+      if (w.id === 4) ammoTxt = w.mag > 0 ? '1 / ∞' : 'В ПОЛЁТЕ…';
+      // миниган: показываем уровень перегрева
+      if (w.id === 2 && w.heat > 0) ammoTxt += '  ' + (w.heat >= 100 ? '🔥 ПЕРЕГРЕВ!' : '🌡 ' + Math.round(w.heat) + '%');
+      dom.ammoText.textContent = ammoTxt;
+      dom.gunName.textContent = w.name;
+      // «Прорыв»: вместо номера волны — прогресс прохождения коридора и метры до финиша
+      const L = LEVELS[levelIndex];
+      if (L.corridor) {
+        const total = L.corrStartZ - L.corrFinishZ;
+        const prog = Math.max(0, Math.min(1, (L.corrStartZ - player.pos.z) / total));
+        dom.corrWrap.classList.remove('hidden');
+        dom.corrFill.style.width = Math.round(prog * 100) + '%';
+        dom.corrText.textContent = '🔥 ПРОРЫВ: ' + Math.round(prog * 100) + '% · до финиша ' +
+          Math.max(0, Math.ceil(player.pos.z - L.corrFinishZ)) + ' м';
+        dom.waveText.textContent = '🔥 ' + L.name;
+      } else {
+        dom.corrWrap.classList.add('hidden');
+        dom.waveText.textContent = 'Волна ' + wave + ' — ' + L.name;
+      }
+      // слот 5 «КОЛЕСО» виден только после покупки моноколеса
+      if (dom.weaponSlots.children.length > 4) {
+        dom.weaponSlots.children[4].classList.toggle('hidden', !wheelOwned);
+      }
+      // подсветка активного оружия (и перегретого минигана)
+      for (let i = 0; i < dom.weaponSlots.children.length; i++) {
+        const slot = dom.weaponSlots.children[i];
+        slot.classList.toggle('on', i === current);
+        slot.classList.toggle('hot', i === 2 && WEAPONS[2].heat >= 100);
+      }
+      // титул «Моноколесная Легенда» — гордость за 9999 монет 😏
+      dom.wheelTitle.classList.toggle('hidden', !wheelOwned);
+      dom.scoreText.textContent = 'Счёт: ' + score;
+      dom.killsText.textContent = 'Убийств: ' + kills;
+      dom.coinsText.textContent = '🪙 ' + coins;
+      updateBossBar();
+      // маленький индикатор музыки
+      dom.musicInd.textContent = musicOn ? '🎵' : '🔇';
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      gameTime += dt;
+
+      if (state === 'playing') {
+        updatePlayer(dt);
+        updateWaves(dt);
+        for (let i = enemies.length - 1; i >= 0; i--) {
+          if (enemies[i].update(dt, gameTime)) {
+            disposeGroup(enemies[i].group);
+            scene.remove(enemies[i].group);
+            enemies.splice(i, 1);
+          }
+        }
+        separateEnemies(dt); // толпа не слипается
+        updatePickups(dt);
+        updateWeapons(dt);
+        updateFireballs(dt);
+        updateThrowWheels(dt);
+        if (cryBudget > 0) cryBudget -= dt;
+        if (beepBudget > 0) beepBudget -= dt;
+        // непрерывное «бииип» пока едешь на колесе — друзья услышат за километр 😏
+        if (riding) {
+          rideBeepT -= dt;
+          if (rideBeepT <= 0) {
+            rideBeepT = 0.55;
+            if (beepBudget <= 0) { beepBudget = 0.45; sounds.beep(); }
+          }
+        } else rideBeepT = 0;
+        // комбо-таймер: если убийств давно не было — множитель сбрасывается
+        if (comboTimer > 0) {
+          comboTimer -= dt;
+          if (comboTimer <= 0) { combo = 0; dom.comboText.classList.add('hidden'); }
+        }
+      }
+
+      updateEffects(dt);
+      updateCamera(dt);
+      if (menuCin.active) updateMenuCinematic(dt); // облёт поля боя в меню (после камеры)
+      updateHUD();
+
+      // облака плывут всегда
+      for (const c of clouds) {
+        c.group.position.x += c.speed * dt;
+        if (c.group.position.x > 220) c.group.position.x = -220;
+      }
+
+      renderer.render(scene, camera);
+      updateEnemyArrows(); // стрелки на оставшихся врагов (после render — свежая матрица камеры)
+    }
+
+    // ------------------------------------------------------------
+    // СТАРТ
+    // ------------------------------------------------------------
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    dom.overlayBtn.addEventListener('click', () => {
+      initAudio();
+      if (audio && audio.ctx.state === 'suspended') audio.ctx.resume();
+      if (state === 'menu') {
+        // пролог сюжета — только при старте кампании (1-й уровень)
+        if (levelIndex === 0) showPrologue();
+        else resetGame();
+      }
+      else if (state === 'story') resetGame(); // из пролога — в погоню за термосом!
+      else if (state === 'paused') { dom.overlay.classList.add('hidden'); state = 'playing'; tryLock(); }
+      else if (state === 'dead') resetGame();
+      else if (state === 'won') {
+        // кампания пройдена → в меню, иначе — следующий уровень
+        if (levelIndex < LEVELS.length - 1) { levelIndex++; resetGame(); }
+        else showMainMenu();
+      }
+    });
+
+    // Первый клик в любом месте — начинаем эмбиент меню (браузеры запрещают автоплей)
+    document.addEventListener('pointerdown', function firstClick() {
+      if (musicOn && state === 'menu') {
+        musMenu.volume = MUS_VOL;
+        musMenu.play().catch(() => {});
+      }
+      document.removeEventListener('pointerdown', firstClick);
+    });
+
+    // при старте показываем главное меню с выбором уровня (фон — карта 1-го уровня)
+    applyLevelTheme(0);
+    dom.hud.classList.remove('hidden');
+    showMainMenu();
+    animate();
+  </script>
+</body>
+</html>
