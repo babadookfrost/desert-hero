@@ -21,17 +21,6 @@
 - **Взрывчатые бочки** с цепной реакцией
 - Прогресс и монеты сохраняются в браузере игрока (localStorage)
 
-## 🚀 Развернуть на GitHub Pages
-
-1. Создай репозиторий на GitHub (например, `desert-hero`)
-2. Подключи и запушь:
-   ```bash
-   git remote add origin https://github.com/ТВОЙ_НИК/desert-hero.git
-   git branch -M main
-   git push -u origin main
-   ```
-3. На GitHub: **Settings → Pages → Branch: main → Save**
-4. Игра будет доступна по адресу: `https://ТВОЙ_НИК.github.io/desert-hero/`
 
 ## 🎵 Музыка
 
