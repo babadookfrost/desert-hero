@@ -6,3 +6,6 @@ release/
 
 # Временные файлы проверки
 _game_check.mjs
+
+# Результат сборки (static hosting)
+dist/

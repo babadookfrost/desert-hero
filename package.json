@@ -1,0 +1,10 @@
+{
+  "name": "desert-hero",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Герой Пустыни — браузерный 3D-шутер в духе Serious Sam (один HTML-файл, без зависимостей)",
+  "scripts": {
+    "start": "node serve.js",
+    "build": "node -e \"require('fs').mkdirSync('dist',{recursive:true});require('fs').copyFileSync('index.html','dist/index.html');console.log('Built static site -> dist/')\""
+  }
+}
