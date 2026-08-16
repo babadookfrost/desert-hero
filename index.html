@@ -679,7 +679,7 @@
       }
       return LEVELS.length - 1; // за финишем — считаем последней
     }
-    const BUILD_TAG = '12.08.2026 · v11';    // показывается в меню — отличай свежую сборку от закэшированной
+    const BUILD_TAG = '12.08.2026 · v12';    // показывается в меню — отличай свежую сборку от закэшированной
     let levelIndex = 0;                    // стартовая секция (0..4)
     let unlockedLevel = loadVal('gd_level', 0); // последняя открытая секция
     let sectionIndex = 0;                  // секция, где игрок СЕЙЧАС
@@ -5160,6 +5160,20 @@ e.knock.addScaledVector(to, 4 / Math.max(0.8, e.radius * 1.1)); // отброс 
         for (const k of Object.keys(ud)) { savedUD[k] = ud[k]; delete ud[k]; }
         const m = allGuns[d.w].clone();
         Object.assign(allGuns[d.w].userData, savedUD);
+        // СКЕЛЕТНЫЕ МОДЕЛИ (у дробовика GLB есть арматура): clone() делит скелет с стволом
+        // в руке, поэтому подбор рендерился «призраком» прямо у камеры, поверх ножа.
+        // Перепривязываем клон к ЕГО собственным костям — подбор остаётся на месте.
+        const cloneBones = [];
+        m.traverse(b => { if (b.isBone) cloneBones.push(b); });
+        m.traverse(o => {
+          if (!o.isSkinnedMesh || !o.skeleton) return;
+          const bones = o.skeleton.bones
+            .map(ob => cloneBones.find(b => b.name === ob.name))
+            .filter(Boolean);
+          if (bones.length === o.skeleton.bones.length) {
+            o.bind(new THREE.Skeleton(bones, o.skeleton.boneInverses.slice()), o.bindMatrix.clone());
+          }
+        });
         m.visible = true;
         m.position.set(d.x, 1.15, d.z);
         m.rotation.x = 0.28;
