@@ -679,7 +679,7 @@
       }
       return LEVELS.length - 1; // за финишем — считаем последней
     }
-    const BUILD_TAG = '12.08.2026 · v12';    // показывается в меню — отличай свежую сборку от закэшированной
+    const BUILD_TAG = '12.08.2026 · v13';    // показывается в меню — отличай свежую сборку от закэшированной
     let levelIndex = 0;                    // стартовая секция (0..4)
     let unlockedLevel = loadVal('gd_level', 0); // последняя открытая секция
     let sectionIndex = 0;                  // секция, где игрок СЕЙЧАС
@@ -2542,6 +2542,13 @@ const push = ((min - d) / d) * 0.5 * ((e.charging || n.charging) ? 3.5 : 1); // 
         setTimeout(() => { tone(110, 0.5, 'triangle', 0.42, 55); noiseBurst(0.35, 'lowpass', 900, 0.4, 200); }, 200);
         setTimeout(() => tone(220, 0.45, 'sawtooth', 0.18, 110), 340);
       },
+      // 🎬 AI-ДИРЕКТОР: «вступительная» нота — режиссёр принял решение
+      director() {
+        tone(196, 0.4, 'triangle', 0.4, 392);
+        setTimeout(() => { tone(294, 0.4, 'triangle', 0.36, 587); }, 130);
+        setTimeout(() => { noiseBurst(0.35, 'lowpass', 800, 0.35, 260); }, 150);
+        setTimeout(() => tone(392, 0.5, 'sawtooth', 0.14, 196), 260);
+      },
       reload()  {
         play('reload1');
         setTimeout(() => play('reload2'), 160);
@@ -3229,12 +3236,13 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
           if (comboTimer > 0) combo = Math.min(combo + 1, 9); else combo = 1;
           comboTimer = 2.5;
           const mult = combo >= 2 ? combo : 1;
-          const pts = (t.score + (headshot ? 5 : 0)) * mult;
+          const pts = (t.score + (headshot ? 5 : 0)) * mult * (this.elite ? 2 : 1);
           score += pts;
           kills++;
+          DIRECTOR.kills += 1; // 🎬 директор видит, как ты косишь толпу
           stats.kills++; statsDirty = true;   // статистика: убийства за всё время
           if (headshot) stats.headshots++;
-          coins += t.coins; // монеты за убийство!
+          coins += t.coins * (this.elite ? 2 : 1); // монеты за убийство (элита платит вдвое!)
           saveVal('gd_coins', coins);
           // КАМИКАДЗЕ: несёт бомбы — подстрелил → ВЗРЫВ, сносящий толпу вокруг!
           if (this.type === 'kamikaze') {
@@ -3472,7 +3480,12 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
       if (!corrFinal) {
         // орды валят навстречу почти непрерывно (после того как подобрал револьвер)
         if (!weaponLocked) {
-          corrHordeT -= dt;
+          if (DIRECTOR.breatherT > 0) {
+            // 🎬 ДИРЕКТОР: передышка — орды молчат; толпа зачищена — хватит отдыхать
+            if (!enemies.some((e) => !e.dead)) DIRECTOR.breatherT = Math.min(DIRECTOR.breatherT, 2.2);
+          } else {
+            corrHordeT -= dt;
+          }
           if (corrHordeT <= 0) {
             // интервал растёт с волной — даём время расчистить коридор, а не тонуть в толпе
             corrHordeT = 3.4 + Math.random() * 1.8 + Math.min(wave, 10) * 0.14;
@@ -3561,6 +3574,112 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
       } else if (waveState === 'pause') {
         wavePauseTimer -= dt;
         if (wavePauseTimer <= 0) startWave(wave + 1);
+      }
+    }
+
+    // ------------------------------------------------------------
+    // 🎬 AI-ДИРЕКТОР — «режиссёр» сложности (в духе Left 4 Dead)
+    // Спавн по таймеру — это инди. Директор следит за стрессом игрока:
+    //   • почти мёртв  → передышка (орды молчат) + аптечка/броня по пути;
+    //   • легко косит  → элитный отряд Огров с флангов, чтобы адреналин скакнул.
+    // ------------------------------------------------------------
+    const DIRECTOR = {
+      hpLoss: 0,     // потеряно HP+брони за последние ~10 сек
+      shots: 0,      // выстрелов/взмахов за последние ~8 сек (агрессия игрока)
+      kills: 0,      // убийств за последние ~7 сек
+      alive: 0,      // живых врагов сейчас
+      closest: 999,  // ближайший враг, м
+      stress: 0,     // итоговый стресс 0..1
+      eliteCd: 0,    // кулдаун элитных отрядов, сек
+      breatherT: 0,  // сколько ещё длится передышка, сек
+      msgCd: 0,      // чтобы не спамить надписи директора
+    };
+
+    // Стресс игрока: недавний урон + низкое HP + враги вплотную + толпа вокруг
+    function directorStress() {
+      const hpPct = player.hp / maxHp();
+      let s = 0;
+      s += Math.min(1, DIRECTOR.hpLoss / 50) * 0.45;        // недавние потери здоровья/брони
+      s += (hpPct < 0.4 ? (0.4 - hpPct) / 0.4 : 0) * 0.35;  // осталось мало здоровья
+      s += Math.min(1, DIRECTOR.closest / 14) * 0.10;       // враги рядом
+      s += Math.min(1, DIRECTOR.alive / 18) * 0.10;         // толпа вокруг
+      s += Math.min(1, DIRECTOR.shots / 30) * 0.10;         // шквал огня — адреналин
+      return Math.min(1, s);
+    }
+
+    // Элитный отряд: три Огра-Чарджера врываются с разных сторон!
+    // Золотая «ЭЛИТА»: живучее, быстрее, дают вдвое больше очков и монет.
+    function spawnEliteSquad() {
+      const L = LEVELS[levelIndex];
+      const side = [-26, 0, 26]; // левый фланг, центр, правый фланг
+      const zz = Math.max(player.pos.z - (38 + Math.random() * 18), CAMPAIGN.endZ + 12);
+      for (let i = 0; i < 3; i++) {
+        const p = L.corridor
+          ? new THREE.Vector3(side[i] + (Math.random() * 6 - 3), 0, zz + (Math.random() * 10 - 5))
+          : new THREE.Vector3(Math.cos(Math.PI * 2 * i / 3) * 48, 0, Math.sin(Math.PI * 2 * i / 3) * 48);
+        const secNow = L.corridor ? sectionAtZ(player.pos.z) : 0;
+        const e = new Enemy('charger', p, hpScale(Math.min(wave, 3)) * (1 + secNow * 0.25) * 1.8);
+        e.elite = true;
+        e.speed *= 1.12;
+        e.group.scale.multiplyScalar(1.12);
+        // золотая окраска + свечение — сразу видно, что это не простой Огр
+        for (const m of e.group.userData.mats) {
+          m.color.setHex(0xd8a628);
+          m.emissive.setHex(0x8a5a08);
+          m.emissiveIntensity = 0.5;
+        }
+        enemies.push(e);
+      }
+      showMsg('🎬 ДИРЕКТОР: ЭЛИТНЫЙ ОТРЯД ОГРОВ С ФЛАНГОВ! 🔥', 2.8);
+      sounds.director();
+      setTimeout(() => { if (state === 'playing') sounds.monsterCry(); }, 500);
+      setTimeout(() => { if (state === 'playing') sounds.monsterCry(); }, 900);
+      camShake = Math.max(camShake, 0.22); // земля дрожит — элита близко
+    }
+
+    // Сердце директора — вызывается каждый кадр боя
+    function updateDirector(dt) {
+      // окна наблюдения: «помнить» последние ~10 секунд (экспоненциальное затухание)
+      DIRECTOR.hpLoss *= Math.exp(-dt / 10);
+      DIRECTOR.shots  *= Math.exp(-dt / 8);
+      DIRECTOR.kills  *= Math.exp(-dt / 7);
+      DIRECTOR.msgCd  -= dt;
+      DIRECTOR.eliteCd -= dt;
+      DIRECTOR.breatherT = Math.max(0, DIRECTOR.breatherT - dt);
+      if (state !== 'playing' || weaponLocked || showcaseMode) return; // интро и осмотр — без режиссуры
+
+      // сколько врагов рядом и насколько близко
+      DIRECTOR.alive = 0;
+      DIRECTOR.closest = 999;
+      for (const e of enemies) {
+        if (e.dead) continue;
+        DIRECTOR.alive++;
+        const d = e.group.position.distanceTo(player.pos);
+        if (d < DIRECTOR.closest) DIRECTOR.closest = d;
+      }
+      DIRECTOR.stress = directorStress();
+
+      if (DIRECTOR.breatherT > 0) return; // уже отдыхаем
+
+      // 1) ИГРОК ПОЧТИ МЁРТВ → передышка + аптечка (а если и броня на нуле — и она)
+      if (DIRECTOR.stress > 0.65 && DIRECTOR.msgCd <= 0 && player.hp < maxHp() * 0.65) {
+        DIRECTOR.breatherT = 6 + Math.random() * 3;
+        DIRECTOR.msgCd = 18;
+        const ahead = Math.max(player.pos.z - 26, CAMPAIGN.endZ + 10);
+        spawnPickup(new THREE.Vector3(player.pos.x + (Math.random() * 8 - 4), 0, ahead), 'heal');
+        if (player.armor < 45) spawnPickup(new THREE.Vector3(player.pos.x + (Math.random() * 8 - 4), 0, ahead - 5), 'armor');
+        showMsg('🎬 ДИРЕКТОР: РАНЫ ТЯЖКИ — ВПЕРЁДИ АПТЕЧКА, ОТДОХНИ!', 2.6);
+        sounds.director();
+        return;
+      }
+
+      // 2) ИГРОК ЛЕГКО КОСИТ ТОЛПУ → элитный отряд (скачок адреналина!)
+      const bossUp = enemies.some((e) => e.type === 'boss' && !e.dead);
+      if (DIRECTOR.stress < 0.28 && DIRECTOR.eliteCd <= 0 && DIRECTOR.kills >= 4 &&
+          DIRECTOR.alive < 6 && wave >= 3 && !corrFinal && !bossUp) {
+        DIRECTOR.eliteCd = 28 + Math.random() * 14;
+        DIRECTOR.msgCd = 12;
+        spawnEliteSquad();
       }
     }
 
@@ -3669,6 +3788,7 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
       // НОЖ: мах вблизи — патронов не тратит, бьёт всех впереди
       if (w.melee) {
         knifeSlashT = 1; // анимация маха
+        DIRECTOR.shots += 1; // 🎬 агрессия игрока (взмахи ножа тоже считаются)
         sounds.knife();
         const fwd = aimDir();
         const fwdFlat = new THREE.Vector3(fwd.x, 0, fwd.z);
@@ -3712,6 +3832,7 @@ e.knock.addScaledVector(to, 4 / Math.max(0.8, e.radius * 1.1)); // отброс 
       if (w.id === 3 && w.heat >= 100) { sounds.dry(); return; }
       w.mag--;
       w.fireTimer = w.fireRate;
+      DIRECTOR.shots += 1; // 🎬 директор видит, как часто ты стреляешь
       // миниган копит перегрев во время стрельбы
       if (w.id === 3) w.heat = Math.min(100, w.heat + 3.4);
       recoilUp = Math.min(0.15, recoilUp + w.recoil);
@@ -4592,6 +4713,7 @@ e.knock.addScaledVector(to, 4 / Math.max(0.8, e.radius * 1.1)); // отброс 
       if (state !== 'playing') return;
       if (gameTime < player.invulnUntil) return;
       player.invulnUntil = gameTime + 0.9;
+      DIRECTOR.hpLoss += amount; // 🎬 директор фиксирует потерю здоровья/брони
       // БРОНЯ: сначала поглощает урон, и только потом бьёт по здоровью (как в Serious Sam!)
       if (player.armor > 0) {
         const absorbed = Math.min(player.armor, amount);
@@ -4776,7 +4898,7 @@ e.knock.addScaledVector(to, 4 / Math.max(0.8, e.radius * 1.1)); // отброс 
       if (bt) bt.textContent = ' · сборка ' + BUILD_TAG;
       showOverlay(
         'ГЕРОЙ ПУСТЫНИ',
-        'Великий Поход в духе Serious Sam — одна огромная карта: ' + LEVELS.length + ' секций, толпы монстров за каждыми вратами, и термос ждёт в конце! · 🏆 Рекорд: ' + loadVal('gd_best', 0),
+        'Великий Поход в духе Serious Sam — одна огромная карта: ' + LEVELS.length + ' секций, толпы монстров за каждыми вратами, и термос ждёт в конце! Сложностью рулит 🎬 АI-ДИРЕКТОР · 🏆 Рекорд: ' + loadVal('gd_best', 0),
         '▶ НАЧАТЬ ПОХОД', true, true
       );
       setMusic('menu');
@@ -5085,6 +5207,8 @@ e.knock.addScaledVector(to, 4 / Math.max(0.8, e.radius * 1.1)); // отброс 
       wave = 0; score = 0; kills = 0;
       spawnQueue = []; waveState = 'idle';
       corrHordeT = 0; corrFinal = false; corrGates = 0;
+      DIRECTOR.hpLoss = 0; DIRECTOR.shots = 0; DIRECTOR.kills = 0; DIRECTOR.stress = 0;
+      DIRECTOR.eliteCd = 0; DIRECTOR.breatherT = 0; DIRECTOR.msgCd = 0; // 🎬 директор начинает с чистого листа
       sectionIndex = levelIndex;
       secBossSpawned = false; secBossDown = false; secBossAlive = false;
       secGatesHit = [];
@@ -5432,6 +5556,7 @@ e.knock.addScaledVector(to, 4 / Math.max(0.8, e.radius * 1.1)); // отброс 
         }
         updatePlayer(dt);
         updateWaves(dt);
+        updateDirector(dt); // 🎬 AI-директор следит за ходом боя
         for (let i = enemies.length - 1; i >= 0; i--) {
           if (enemies[i].update(dt, gameTime)) {
             disposeGroup(enemies[i].group);
