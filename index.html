@@ -590,6 +590,10 @@
     import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+    import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+    import { VignetteShader } from 'three/addons/shaders/VignetteShader.js';
     import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
     // ------------------------------------------------------------
@@ -981,6 +985,7 @@
         loader.load(PH(id), (t) => {
           t.wrapS = t.wrapT = THREE.RepeatWrapping;
           t.colorSpace = THREE.SRGBColorSpace;
+          t.anisotropy = maxAniso; // ААА: чёткость под углом и вдаль
           entry.tex = t;
           resolve(t);
         }, undefined, () => resolve(null)); // ошибка сети — остаётся процедурная текстура
@@ -998,6 +1003,37 @@
         const c = t.clone();
         c.repeat.set(repeat, repeat);
         mat.map = c;
+        mat.needsUpdate = true;
+      };
+      if (e.tex) apply(e.tex);
+      else e.promise.then((t) => apply(t));
+    }
+    // PBR-обёртка: диффуз + карта нормалей (рельеф скал/стен/земли) — главный ААА-эффект карты
+    const normCache = {};
+    function loadNormTex(id) {
+      if (normCache[id]) return normCache[id];
+      const entry = { tex: null, promise: null };
+      entry.promise = new Promise((resolve) => {
+        const loader = new THREE.TextureLoader();
+        loader.load(PHN(id), (t) => {
+          t.wrapS = t.wrapT = THREE.RepeatWrapping;
+          t.anisotropy = maxAniso;
+          entry.tex = t; resolve(t);
+        }, undefined, () => resolve(null));
+      });
+      normCache[id] = entry;
+      return entry;
+    }
+    function applyTexNormal(mat, id, repeat, normalScale) {
+      applyTex(mat, id, repeat);
+      const e = loadNormTex(id);
+      const ns = normalScale !== undefined ? normalScale : 1.0;
+      const apply = (t) => {
+        if (!t || !mat) return;
+        const c = t.clone();
+        c.repeat.set(repeat, repeat);
+        mat.normalMap = c;
+        mat.normalScale.set(ns, ns);
         mat.needsUpdate = true;
       };
       if (e.tex) apply(e.tex);
@@ -1023,11 +1059,11 @@
       const key = id + '|' + repeat;
       if (skinTexCache[key]) return skinTexCache[key];
       const entry = { tex: null, norm: null, mats: new Set() };
-      const wrap = (t) => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat); };
+      const wrap = (t) => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat); t.anisotropy = maxAniso; };
       const touch = () => {
         for (const m of entry.mats) {
           if (entry.tex) m.map = entry.tex;
-          if (entry.norm) { m.normalMap = entry.norm; m.normalScale.set(0.6, 0.6); }
+          if (entry.norm) { m.normalMap = entry.norm; m.normalScale.set(0.8, 0.8); }
           m.needsUpdate = true;
         }
       };
@@ -1043,7 +1079,7 @@
       const e = loadSkinTex(s.tex, s.repeat);
       e.mats.add(mat);
       if (e.tex) mat.map = e.tex;
-      if (e.norm) { mat.normalMap = e.norm; mat.normalScale.set(0.6, 0.6); }
+      if (e.norm) { mat.normalMap = e.norm; mat.normalScale.set(0.8, 0.8); }
       mat.needsUpdate = true;
     }
 
@@ -1063,10 +1099,19 @@
       const l = LEVELS[idx];
       scene.background = (l.skybox && skyboxOk) ? skyboxTex : makeSkyTexture(l.sky);
       sunSprite.visible = !(l.skybox && skyboxOk); // при настоящем небе солнце уже нарисовано
-      // туман у каждой секции свой — атмосфера меняется по мере продвижения
-      scene.fog = new THREE.Fog(l.horizon, l.fogNear !== undefined ? l.fogNear : 60, l.fogFar !== undefined ? l.fogFar : 220);
+      // ААА: звёзды — только когда небо тёмное (верхний цвет неба) и нет skybox-куба.
+      // Оцениваем яркость верхнего стопа неба; если он тёмный — показываем звёзды.
+      const topColor = l.sky[0];
+      const lum = (parseInt(topColor.slice(1, 3), 16) * 0.299
+                 + parseInt(topColor.slice(3, 5), 16) * 0.587
+                 + parseInt(topColor.slice(5, 7), 16) * 0.114) / 255;
+      starField.visible = !(l.skybox && skyboxOk) && lum < 0.18;
+      // туман у каждой секции свой — атмосфера меняется по мере продвижения.
+      // ААА: экспоненциальный туман — естественное затухание вдаль (как в крупных проектах)
+      const fFar = l.fogFar !== undefined ? l.fogFar : 220;
+      scene.fog = new THREE.FogExp2(l.horizon, 2.0 / fFar);
       ground.material.color.setHex(0xffffff); // настоящая текстура не «красится»
-      applyTex(ground.material, l.tex.ground, 100); // на огромной земле — частая плитка, иначе песок станет кашей
+      applyTexNormal(ground.material, l.tex.ground, 100, 0.7); // ААА: рельеф песка + диффуз
       sunLight.color.setHex(l.sun);
       sunLight.intensity = l.sunInt;
       hemiLight.color.setHex(l.hemi[0]);
@@ -1106,15 +1151,42 @@
 
     const scene = new THREE.Scene();
     scene.background = makeSkyTexture(LEVELS[0].sky);
-    scene.fog = new THREE.Fog(LEVELS[0].horizon, 90, 300);
+    scene.fog = new THREE.FogExp2(LEVELS[0].horizon, 2.0 / 300);
+
+    // ААА: звёздное поле для тёмных секций — настоящие 3D-точки на небесной сфере.
+    // Вращаются вместе с обзором (в отличие от плоского фона-градиента), fog отключён,
+    // чтобы туман не гасил далёкие звёзды. Прячется на дневной секции (там skybox-куб).
+    const STAR_COUNT = 900;
+    const starPos = new Float32Array(STAR_COUNT * 3);
+    for (let i = 0; i < STAR_COUNT; i++) {
+      // равномерно по верхней полусфере радиуса 750
+      const u = Math.random(), v = Math.random();
+      const theta = 2 * Math.PI * u;
+      const phi = Math.acos(v); // 0..π/2 → только верхняя половина
+      const r = 750;
+      starPos[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+      starPos[i * 3 + 1] = r * Math.cos(phi);
+      starPos[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({
+      color: 0xdfe6ff, size: 1.8, sizeAttenuation: true, transparent: true,
+      opacity: 0.9, depthWrite: false, fog: false,
+    });
+    const starField = new THREE.Points(starGeo, starMat);
+    starField.visible = false; // включится applySectionTheme на тёмных секциях
+    scene.add(starField);
 
     const camera = new THREE.PerspectiveCamera(85, innerWidth / innerHeight, 0.05, 1400);
     camera.rotation.order = 'YXZ';
     scene.add(camera);
 
-    const renderer = new THREE.WebGLRenderer({ canvas: dom.canvas, antialias: true });
+    const renderer = new THREE.WebGLRenderer({ canvas: dom.canvas, antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(innerWidth, innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // ААА: анизотропия — текстуры песка/скал/стен остаются чёткими под острым углом и вдаль
+    const maxAniso = renderer.capabilities.getMaxAnisotropy();
     // ТЕНИ — главный скачок в графике
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1126,6 +1198,10 @@
     sunLight.position.set(55, 90, 30);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.set(2048, 2048);
+    // ААА: чистые тени без акне/мерцания — bias сдвигает карту теней, normalBias убирает «прыщи»
+    sunLight.shadow.bias = -0.0004;
+    sunLight.shadow.normalBias = 0.025;
+    sunLight.shadow.radius = 4; // мягкий полутеневой край (PCF)
     sunLight.shadow.camera.left = -70;
     sunLight.shadow.camera.right = 70;
     sunLight.shadow.camera.top = 70;
@@ -1146,13 +1222,28 @@
     const flashLight = new THREE.PointLight(0xffaa44, 0, 70, 2);
     scene.add(flashLight);
 
-    // Пост-обработка: bloom + кинематографичный тонмаппинг (ACES)
+    // Пост-обработка «ААА»: SSAO (затенение в углах) → Bloom → виньетка → SMAA → тонмаппинг.
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.06;
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
+    // SSAO — затенение контактов и щелей; только на Ультра (дорого), на младших качества отключён.
+    const ssaoPass = new SSAOPass(scene, camera, innerWidth, innerHeight);
+    ssaoPass.kernelRadius = 6;     // мягкий радиус — тени в складках скал и под ногами врагов
+    ssaoPass.minDistance = 0.002;
+    ssaoPass.maxDistance = 0.012;
+    ssaoPass.enabled = false;      // по умолчанию выключен — включит applyQuality на Ультра
+    composer.addPass(ssaoPass);
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.7, 0.85);
     composer.addPass(bloomPass);
+    // Киношная виньетка — лёгкое затемнение краёв кадра (фокусирует взгляд на центре)
+    const vignettePass = new ShaderPass(VignetteShader);
+    vignettePass.uniforms['offset'].value = 1.05;
+    vignettePass.uniforms['darkness'].value = 0.85;
+    composer.addPass(vignettePass);
+    // SMAA — чистые края в пост-обработке (renderTarget composer'а без MSAA, поэтому это важно)
+    const smaaPass = new SMAAPass(innerWidth * 2, innerHeight * 2);
+    composer.addPass(smaaPass);
     composer.addPass(new OutputPass());
 
     function applyQuality() {
@@ -1164,9 +1255,15 @@
       composer.setPixelRatio(pr);
       renderer.setSize(innerWidth, innerHeight);
       composer.setSize(innerWidth, innerHeight);
+      // Bloom: под PBR-материалы слегка убавляем силу и поднимаем порог —
+      // светятся только вспышки/солнце/элитное свечение, а не вся сцена.
       bloomPass.enabled = gfxBloom === 1;
-      bloomPass.strength = [0, 0.32, 0.55, 0.8][gfxQuality];
-      bloomPass.threshold = [1, 0.85, 0.72, 0.62][gfxQuality];
+      bloomPass.strength = [0, 0.30, 0.48, 0.62][gfxQuality];
+      bloomPass.threshold = [1, 0.88, 0.78, 0.70][gfxQuality];
+      // SSAO — только Ультра (дорого). На младших выключен: обычных теней уже достаточно.
+      ssaoPass.enabled = gfxQuality >= 3;
+      // SMAA — сглаживание краёв; на Низком выключаем (там и разрешение мало).
+      smaaPass.enabled = gfxQuality >= 1;
       renderer.shadowMap.enabled = gfxShadows === 1 && gfxQuality > 0;
       sunLight.castShadow = renderer.shadowMap.enabled;
       const ss = gfxQuality >= 3 ? 4096 : 2048;
@@ -1212,14 +1309,16 @@
       const tex = new THREE.CanvasTexture(c);
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
       tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = maxAniso; // ААА: песок не мылится вдаль
       return tex;
     }
     const sandTex = makeNoiseTexture('#d9b36b', '#c29a55', '#e8c78a', 900);
 
-    // Земля — большой песчаный круг
+    // Земля — большой песчаный круг. PBR-материал: нормал-мап даст рельеф песка,
+    // а высокая roughness — матовое рассеяние света (как настоящее песчаное море)
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(2600, 64), // ОГРОМНАЯ пустыня: радиус 2.6 км — покрывает всю карту
-      new THREE.MeshLambertMaterial({ map: sandTex })
+      new THREE.MeshStandardMaterial({ map: sandTex, roughness: 0.96, metalness: 0.0 })
     );
     sandTex.repeat.set(60, 60);
     ground.rotation.x = -Math.PI / 2;
@@ -1702,16 +1801,16 @@ const push = ((min - d) / d) * 0.5 * ((e.charging || n.charging) ? 3.5 : 1); // 
     function buildLevelMap(idx) {
       clearLevelMap();
       const l = LEVELS[idx];
-      // материалы без карты; текстура (CC0, Poly Haven) применится, когда догрузится.
-      // Цвет материала — фирменная тонировка уровня (карты отличаются даже без текстур)
-      const rockMat = new THREE.MeshLambertMaterial({ color: l.tint });
-      const wallMat = new THREE.MeshLambertMaterial({ color: l.tint });
-      const pillarMat = new THREE.MeshLambertMaterial({ color: l.tint });
+      // ААА: скалы/стены/колонны — PBR-материалы с рельефом (normal map).
+      // roughness высокая (камень матовый), metalness 0; цвет = тонировка секции.
+      const rockMat = new THREE.MeshStandardMaterial({ color: l.tint, roughness: 0.92, metalness: 0.02 });
+      const wallMat = new THREE.MeshStandardMaterial({ color: l.tint, roughness: 0.9, metalness: 0.02 });
+      const pillarMat = new THREE.MeshStandardMaterial({ color: l.tint, roughness: 0.93, metalness: 0.02 });
       curRockMat = rockMat; curWallMat = wallMat; curPillarMat = pillarMat;
       levelMats.push(rockMat, wallMat, pillarMat);
-      applyTex(rockMat, l.tex.rock, 2);
-      applyTex(wallMat, l.tex.wall, 2.5);
-      applyTex(pillarMat, l.tex.rock, 1.5);      // ВЕЛИКАЯ ПУСТЫНЯ: ОГРОМНАЯ открытая карта ~1900×2800 м!
+      applyTexNormal(rockMat, l.tex.rock, 2, 1.0);
+      applyTexNormal(wallMat, l.tex.wall, 2.5, 1.0);
+      applyTexNormal(pillarMat, l.tex.rock, 1.5, 1.0);      // ВЕЛИКАЯ ПУСТЫНЯ: ОГРОМНАЯ открытая карта ~1900×2800 м!
       // Дальние «хребты» на самом краю (из-за тумана их не видно) + тупик за финишем
       const S = CAMPAIGN;
       const len = S.startZ - S.endZ;
@@ -1845,7 +1944,7 @@ const push = ((min - d) / d) * 0.5 * ((e.charging || n.charging) ? 3.5 : 1); // 
       if (id) {
         const base = PHBASE + id + '/';
         const rep = opts.repeat || 1;
-        const wrap = (t) => { t.wrapS = t.wrapT = THREE.RepeatWrapping; if (rep !== 1) t.repeat.set(rep, rep); };
+        const wrap = (t) => { t.wrapS = t.wrapT = THREE.RepeatWrapping; if (rep !== 1) t.repeat.set(rep, rep); t.anisotropy = maxAniso; };
         m.map = phLoader.load(base + id + '_diff_1k.jpg', (t) => { t.colorSpace = THREE.SRGBColorSpace; wrap(t); });
         if (opts.normal !== false) m.normalMap = phLoader.load(base + id + '_nor_gl_1k.jpg', wrap);
         m.roughnessMap = phLoader.load(base + id + '_rough_1k.jpg', wrap);
@@ -3327,12 +3426,12 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
       // баланс v11: первые волны — в основном зомби; тяжёлые типы входят плавнее,
       // чтобы 1-я секция не душила новичка на узком коридоре
       const roll = Math.random();
-      if (n >= 2 && roll < 0.14) return 'charger';                            // Огр — со 2-й волны
-      if (n >= 3 && roll >= 0.14 && roll < 0.26) return 'monowheel';          // Моноколесник — с 3-й
-      if (n >= 4 && roll >= 0.26 && roll < 0.40) return 'flyer';              // Летучая мышь — с 4-й
-      if (n >= 3 && roll >= 0.40 && roll < 0.50) return 'kamikaze';           // Камикадзе — с 3-й, реже
-      if (n >= 4 && roll >= 0.50 && roll < 0.66) return 'spitter';            // Паук — с 4-й
-      if (n >= 5 && roll >= 0.9) return 'kamikaze';                           // с 5-й — запасной камикадзе
+      if (n >= 3 && roll < 0.14) return 'charger';                            // Огр — со 3-й волны
+      if (n >= 4 && roll >= 0.14 && roll < 0.26) return 'monowheel';          // Моноколесник — с 4-й
+      if (n >= 5 && roll >= 0.26 && roll < 0.40) return 'flyer';              // Летучая мышь — с 5-й
+      if (n >= 4 && roll >= 0.40 && roll < 0.50) return 'kamikaze';           // Камикадзе — с 4-й, реже
+      if (n >= 5 && roll >= 0.50 && roll < 0.66) return 'spitter';            // Паук — с 5-й
+      if (n >= 6 && roll >= 0.9) return 'kamikaze';                           // с 6-й — запасной камикадзе
       return 'walker';
     }
 
@@ -3444,7 +3543,8 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
       wave++;
       const w = Math.min(wave, 9); // рост толпы замедляется, чтобы коридор не «затыкался»
       // баланс: толпа растёт плавно и не заливает коридор (кап 16 — пробиться можно!)
-      const n = Math.min(6 + Math.floor(w * 0.9) + (extra || 0), 14);
+      // ранние орды мягче: wave 1 = 4 врага, чтобы новичок успел освоиться
+      const n = Math.min(4 + Math.floor(w * 0.8) + (extra || 0), 14);
       spawnQueue = [];
       for (let i = 0; i < n; i++) spawnQueue.push({ type: pickEnemyType(Math.min(wave, 6)), t: Math.random() * 1.4 });
       waveState = 'spawning';
@@ -3501,8 +3601,9 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
             corrHordeT -= dt;
           }
           if (corrHordeT <= 0) {
-            // интервал растёт с волной — даём время расчистить коридор, а не тонуть в толпе
-            corrHordeT = 3.4 + Math.random() * 1.8 + Math.min(wave, 10) * 0.14;
+            // интервал растёт с волной — даём время расчистить коридор, а не тонуть в толпе.
+            // ранние волны — реже: на старте игрок без брони и апгрейдов, ему нужна передышка
+            corrHordeT = 5.0 + Math.random() * 2.4 + Math.min(wave, 10) * 0.18;
             spawnHorde();
             sounds.wave();
             setTimeout(() => { if (state === 'playing') sounds.monsterCry(); }, 350);
@@ -3639,12 +3740,12 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
       },
     };
 
-    // Режиссёр выбирает отряд по волне: огры — всегда, рой — с 4-й волны,
-    // камикадзе — только если игрок здоров и волна ≥ 5 (иначе это нечестно).
+    // Режиссёр выбирает отряд по волне: огры — всегда, рой — с 5-й волны,
+    // камикадзе — только если игрок здоров и волна ≥ 6 (иначе это нечестно).
     function pickEliteSquad() {
       const pool = ['ogres', 'ogres'];
-      if (wave >= 4) pool.push('roys');
-      if (wave >= 5 && player.hp > maxHp() * 0.65) pool.push('kamis');
+      if (wave >= 5) pool.push('roys');
+      if (wave >= 6 && player.hp > maxHp() * 0.65) pool.push('kamis');
       return pool[Math.floor(Math.random() * pool.length)];
     }
 
@@ -3777,7 +3878,7 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
       // элита и золотая лихорадка — только пока игрок ЗДОРОВ (>45% HP):
       // полумёртвого режиссёр не давит, а жалеет (передышка выше).
       if (DIRECTOR.stress < 0.28 && DIRECTOR.eliteCd <= 0 && DIRECTOR.kills >= 4 &&
-          DIRECTOR.alive < 6 && wave >= 3 && player.hp > maxHp() * 0.45 && !corrFinal && !bossUp) {
+          DIRECTOR.alive < 6 && wave >= 4 && player.hp > maxHp() * 0.45 && !corrFinal && !bossUp) {
         DIRECTOR.eliteCd = 28 + Math.random() * 14;
         DIRECTOR.msgCd = 12;
         if (Math.random() < 0.25) spawnGoldenHorde();
@@ -5301,7 +5402,7 @@ e.knock.addScaledVector(to, 4 / Math.max(0.8, e.radius * 1.1)); // отброс 
         vel: new THREE.Vector3(),
         yaw: 0, pitch: 0,
         hp: maxHp(),
-        armor: 0, // броня не переносится между забегами — её надо собирать заново
+        armor: 50, // стартовая броня — первые минуты не такие смертельные (как в Serious Sam)
         onGround: true,
         invulnUntil: 0,
         slowT: 0,
@@ -5725,6 +5826,9 @@ e.knock.addScaledVector(to, 4 / Math.max(0.8, e.radius * 1.1)); // отброс 
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
       composer.setSize(innerWidth, innerHeight);
+      // ААА: pass'ы с собственными буферами нужно обновить вручную
+      ssaoPass.setSize(innerWidth, innerHeight);
+      smaaPass.setSize(innerWidth, innerHeight);
     });
 
     // Кнопка «🏆 ДОСТИЖЕНИЯ» — открывает панель статистики и наград
