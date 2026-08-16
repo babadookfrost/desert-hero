@@ -844,7 +844,7 @@
       // СЛОТ 1: НОЖ — есть с самого начала, машет вблизи, патронов не тратит (резерв ∞)
       { id: 0, name: 'Нож', dmg: 55, fireRate: 0.34, spread: 0, pellets: 1, mag: 0, magSize: 0, reloadTime: 0.1, auto: false, recoil: 0.02, color: 0x8a9aa8, melee: true, owned: true, reserveMax: 0, reserve: 0 },
       // СЛОТ 2: РЕВОЛЬВЕР — с самого начала (подбирается на пьедестале в интро)
-      { id: 1, name: 'Револьвер', dmg: 35, fireRate: 0.42, spread: 0.01, pellets: 1, mag: 6, magSize: 6, reloadTime: 1.3, auto: false, recoil: 0.05, color: 0x3a3f47, owned: true, reserveMax: 48, reserve: 0 },
+      { id: 1, name: 'Револьвер', dmg: 35, fireRate: 0.42, spread: 0.01, pellets: 1, mag: 8, magSize: 8, reloadTime: 1.3, auto: false, recoil: 0.05, color: 0x3a3f47, owned: true, reserveMax: 72, reserve: 0 },
       // СЛОТ 3: ДРОБОВИК — подбирается по пути в секции 1
       { id: 2, name: 'Дробовик', dmg: 9,  fireRate: 0.75, spread: 0.055, pellets: 8, mag: 8,  magSize: 8,  reloadTime: 2.0, auto: false, recoil: 0.06, color: 0x6b4a2b, owned: false, reserveMax: 48, reserve: 0 },
       // СЛОТ 4: МИНИГАН — подбирается в секции 2
@@ -3423,6 +3423,14 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
 
     // Какой тип врага появляется на волне n (чем дальше — тем злее)
     function pickEnemyType(n) {
+      // ⚖️ МЯГКИЙ СТАРТ: пока игрок не подобрал миниган — идут только лёгкие враги
+      // (зомби + летучие мыши). Тяжёлые (огр/камикадзе/моноколесник/паук) подключаются
+      // только после минигана — иначе револьвер/дробовик не справляются с напором.
+      if (!WEAPONS[3].owned) {
+        const roll = Math.random();
+        if (n >= 3 && roll < 0.22) return 'flyer'; // немного летающих — разнообразие без душения
+        return 'walker';
+      }
       // баланс v11: первые волны — в основном зомби; тяжёлые типы входят плавнее,
       // чтобы 1-я секция не душила новичка на узком коридоре
       const roll = Math.random();
@@ -3543,8 +3551,14 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
       wave++;
       const w = Math.min(wave, 9); // рост толпы замедляется, чтобы коридор не «затыкался»
       // баланс: толпа растёт плавно и не заливает коридор (кап 16 — пробиться можно!)
-      // ранние орды мягче: wave 1 = 4 врага, чтобы новичок успел освоиться
-      const n = Math.min(4 + Math.floor(w * 0.8) + (extra || 0), 14);
+      // ранние орды мягче: wave 1 = 4 врага, чтобы новичок успел освоиться.
+      // ⚖️ МЯГКИЙ СТАРТ: пока игрок не подобрал миниган — орды меньше и кап ниже,
+      // чтобы револьвер/дробовик успевали зачистить путь без душения.
+      const early = !WEAPONS[3].owned;
+      const base = early ? 2 + Math.floor(w * 0.6) : 4 + Math.floor(w * 0.8);
+      const extraN = early ? Math.floor((extra || 0) / 2) : (extra || 0);
+      const cap = early ? 8 : 14;
+      const n = Math.min(base + extraN, cap);
       spawnQueue = [];
       for (let i = 0; i < n; i++) spawnQueue.push({ type: pickEnemyType(Math.min(wave, 6)), t: Math.random() * 1.4 });
       waveState = 'spawning';
@@ -3602,8 +3616,11 @@ takeDamage(dmg, headshot, knockDir, knockPower) {
           }
           if (corrHordeT <= 0) {
             // интервал растёт с волной — даём время расчистить коридор, а не тонуть в толпе.
-            // ранние волны — реже: на старте игрок без брони и апгрейдов, ему нужна передышка
-            corrHordeT = 5.0 + Math.random() * 2.4 + Math.min(wave, 10) * 0.18;
+            // ранние волны — реже: на старте игрок без брони и апгрейдов, ему нужна передышка.
+            // ⚖️ МЯГКИЙ СТАРТ: пока нет минигана — интервал длиннее (больше времени на зачистку).
+            const early = !WEAPONS[3].owned;
+            const base = early ? 6.8 : 5.0;
+            corrHordeT = base + Math.random() * 2.4 + Math.min(wave, 10) * 0.18;
             spawnHorde();
             sounds.wave();
             setTimeout(() => { if (state === 'playing') sounds.monsterCry(); }, 350);
@@ -5470,7 +5487,7 @@ e.knock.addScaledVector(to, 4 / Math.max(0.8, e.radius * 1.1)); // отброс 
     // Новые стволы не даются сразу — они лежат на пути Великого Похода:
     // дробовик в секции 1, миниган в секции 2, ракетница в секции 3.
     const WEAPON_DROPS = [
-      { w: 2, x: 0,   z: -100,  msg: '🔫 НАЙДЕН ДРОБОВИК!',   sub: 'Картечь — ближний бой!' },
+      { w: 2, x: 0,   z: -30,   msg: '🔫 НАЙДЕН ДРОБОВИК!',   sub: 'Картечь — ближний бой!' },
       { w: 3, x: 0,   z: -500,  msg: '🔫 НАЙДЕН МИНИГАН!',   sub: '600 выстрелов в минуту!' },
       { w: 4, x: 0,   z: -1000, msg: '🔫 НАЙДЕНА РАКЕТНИЦА!', sub: 'Летит и самонаводится!' },
     ];
